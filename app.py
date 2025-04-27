@@ -4,6 +4,8 @@ Main application for the Trading Bot webhook server
 import os
 import logging
 import json
+import time
+import pandas as pd
 from flask import Flask, request, jsonify
 from trading_bot.webhook_handler import WebhookHandler
 from trading_bot.config import load_ticker_data
@@ -42,6 +44,102 @@ def webhook():
         return jsonify({
             "status": "error",
             "message": f"Error processing webhook: {str(e)}"
+        }), 500
+
+@app.route('/markets/<epic>', methods=['GET'])
+def get_market_details(epic):
+    """Get market details for a specific epic"""
+    try:
+        # Get market details from the IG API
+        if not webhook_handler.trade_manager.ig_client._ensure_session():
+            return jsonify({
+                "status": "error",
+                "message": "Failed to authenticate with IG API"
+            }), 401
+            
+        # Endpoint URL ve header hazırlama
+        base_url = webhook_handler.trade_manager.ig_client.BASE_URL
+        market_url = f"{base_url}/markets/{epic}"
+        market_headers = webhook_handler.trade_manager.ig_client.headers.copy()
+        market_headers['Version'] = '3'  # Version 3 provides more detailed market data
+        
+        try:
+            # API isteği yap
+            market_response = webhook_handler.trade_manager.ig_client.session.get(market_url, headers=market_headers)
+            
+            if market_response.status_code == 200:
+                market_data = market_response.json()
+                
+                # Önemli bilgileri çıkar
+                snapshot = market_data.get('snapshot', {})
+                dealing_rules = market_data.get('dealingRules', {})
+                instrument = market_data.get('instrument', {})
+                
+                # Daha kapsamlı yanıt oluştur
+                result = {
+                    "status": "success",
+                    "epic": epic,
+                    "market_details": {
+                        "prices": {
+                            "bid": snapshot.get('bid'),
+                            "offer": snapshot.get('offer'),
+                            "current_price": (snapshot.get('bid', 0) + snapshot.get('offer', 0)) / 2 if snapshot.get('bid') is not None and snapshot.get('offer') is not None else None,
+                        },
+                        "status": {
+                            "market_status": snapshot.get('marketStatus'),
+                            "tradeable": snapshot.get('tradeable', False)
+                        },
+                        "instrument": {
+                            "name": instrument.get('name'),
+                            "type": instrument.get('type'),
+                            "currency": instrument.get('currencies', [{}])[0].get('code') if instrument.get('currencies') else None,
+                            "expiry": instrument.get('expiry'),
+                            "epic": instrument.get('epic'),
+                            "lot_size": instrument.get('lotSize'),
+                            "contract_size": instrument.get('contractSize'),
+                            "controlled_risk_allowed": instrument.get('controlledRiskAllowed', False),
+                            "streaming_prices_available": instrument.get('streamingPricesAvailable', False),
+                            "market_id": instrument.get('marketId')
+                        },
+                        "dealing_rules": {
+                            "min_stop_distance": dealing_rules.get('minNormalStopOrLimitDistance', {}).get('value'),
+                            "min_stop_distance_unit": dealing_rules.get('minNormalStopOrLimitDistance', {}).get('unit'),
+                            "min_deal_size": dealing_rules.get('minDealSize', {}).get('value'),
+                            "min_deal_size_unit": dealing_rules.get('minDealSize', {}).get('unit'),
+                            "max_deal_size": dealing_rules.get('maxDealSize', {}).get('value'),
+                            "max_deal_size_unit": dealing_rules.get('maxDealSize', {}).get('unit')
+                        }
+                    }
+                }
+                
+                return jsonify(result)
+            else:
+                error_msg = ""
+                try:
+                    error_msg = market_response.json().get('errorCode', '')
+                except:
+                    error_msg = market_response.text
+                    
+                logging.error(f"Failed to get market details: {market_response.status_code} - {error_msg}")
+                return jsonify({
+                    "status": "error",
+                    "message": f"Failed to get market details for epic: {epic}",
+                    "error_code": market_response.status_code,
+                    "error_message": error_msg
+                }), 404
+                
+        except Exception as e:
+            logging.error(f"Exception while getting market details: {e}")
+            return jsonify({
+                "status": "error",
+                "message": f"Error getting market details: {str(e)}"
+            }), 500
+            
+    except Exception as e:
+        logging.error(f"Error getting market details: {e}")
+        return jsonify({
+            "status": "error",
+            "message": f"Error getting market details: {str(e)}"
         }), 500
 
 @app.route('/positions', methods=['GET'])
@@ -197,6 +295,566 @@ def test():
         "message": "Trading Bot test endpoint",
         "ticker_count": ticker_count
     })
+
+@app.route('/test/epics', methods=['GET'])
+def test_epic_data():
+    """Test endpoint to check EPIC data in ticker file"""
+    try:
+        # Ticker data dosyasını kontrol et
+        ticker_data = load_ticker_data()
+        if ticker_data.empty:
+            return jsonify({
+                "status": "error",
+                "message": "Ticker data file is empty or not found"
+            }), 404
+        
+        # IG EPIC sütunu var mı kontrol et
+        has_epic_column = 'IG EPIC' in ticker_data.columns
+        
+        # Toplam epic sayısını ve geçerli epic sayısını hesapla
+        total_rows = len(ticker_data)
+        valid_epics = 0
+        epic_values = []
+        
+        if has_epic_column:
+            # Geçerli EPIC'leri say ve ilk 20 örneği ekle
+            for index, row in ticker_data.iterrows():
+                epic = row.get('IG EPIC', '')
+                symbol = row.get('Symbol', '')
+                
+                if epic and epic != '?':
+                    valid_epics += 1
+                    if len(epic_values) < 20:  # Sadece ilk 20 örneği göster
+                        epic_values.append({
+                            'symbol': symbol,
+                            'epic': epic
+                        })
+        
+        # Sütunların bir listesini hazırla
+        columns = list(ticker_data.columns)
+        
+        # CSV dosyasının ilk 5 satırını örnek olarak al
+        sample_data = []
+        for i in range(min(5, total_rows)):
+            row_data = {}
+            for col in columns:
+                row_data[col] = ticker_data.iloc[i][col]
+            sample_data.append(row_data)
+        
+        return jsonify({
+            "status": "success",
+            "ticker_file_info": {
+                "total_rows": total_rows,
+                "columns": columns,
+                "has_epic_column": has_epic_column,
+                "valid_epic_count": valid_epics,
+                "epic_examples": epic_values,
+                "sample_rows": sample_data
+            }
+        })
+        
+    except Exception as e:
+        logging.error(f"Error in test endpoint: {e}")
+        return jsonify({
+            "status": "error",
+            "message": f"Error in test endpoint: {str(e)}"
+        }), 500
+
+@app.route('/markets', methods=['GET'])
+def list_markets():
+    """Get markets based on filtering criteria"""
+    try:
+        # Get query parameters
+        instrument_type = request.args.get('type', '').lower()  # spreadbet, cfd, etc.
+        search_term = request.args.get('search', '')
+        max_results = request.args.get('max_results', default=50, type=int)
+        
+        if not webhook_handler.trade_manager.ig_client._ensure_session():
+            return jsonify({
+                "status": "error",
+                "message": "Failed to authenticate with IG API"
+            }), 401
+            
+        # Ticker data'dan epic bilgilerini al (eğer varsa)
+        ticker_data = load_ticker_data()
+        known_epics = {}
+        
+        if not ticker_data.empty and 'IG EPIC' in ticker_data.columns:
+            # CSV dosyasındaki EPIC bilgilerini topla
+            for index, row in ticker_data.iterrows():
+                symbol = row.get('Symbol', '')
+                epic = row.get('IG EPIC', '')
+                # NaN veya sayısal değer değilse ve boş string değilse işle
+                if epic and epic != '?' and isinstance(epic, str):
+                    known_epics[epic] = symbol
+        
+        # Eğer arama terimi varsa, IG API üzerinden arama yap
+        markets = []
+        filtered_markets = []
+        
+        if search_term:
+            # IG API'nin market arama endpoint'ini kullan
+            search_results = webhook_handler.trade_manager.ig_client.search_market(search_term)
+            
+            if search_results and isinstance(search_results, dict) and 'markets' in search_results:
+                markets = search_results['markets']
+            elif search_results and isinstance(search_results, list):
+                markets = search_results
+        
+        # Eğer arama yoksa veya bilinen epic'leri kullanacaksak
+        if not search_term or not markets:
+            # Bilinen sembolleri temel alarak piyasaları ara
+            for epic, symbol in known_epics.items():
+                # CSV'deki sembollere göre arama yap
+                symbol_to_search = symbol.split(':')[-1] if ':' in symbol else symbol
+                
+                # API üzerinden sembolü ara
+                search_results = webhook_handler.trade_manager.ig_client.search_market(symbol_to_search)
+                
+                if search_results and isinstance(search_results, dict) and 'markets' in search_results:
+                    symbol_markets = search_results['markets']
+                elif search_results and isinstance(search_results, list):
+                    symbol_markets = search_results
+                else:
+                    symbol_markets = []
+                
+                if symbol_markets:
+                    # Doğru epic'i bulmaya çalış
+                    found = False
+                    for market in symbol_markets:
+                        market_epic = market.get('epic', '')
+                        # CSV'deki epic ile aynı mı kontrol et
+                        if market_epic == epic:
+                            markets.append(market)
+                            found = True
+                            break
+                    
+                    # Hiç eşleşme bulunamadıysa ilk sonucu kullan
+                    if not found and symbol_markets:
+                        markets.append(symbol_markets[0])
+        
+        logging.info(f"Found {len(markets)} markets before filtering")
+        
+        # Spreadbet türüne göre filtrele
+        if instrument_type == 'spreadbet':
+            for market in markets:
+                epic = market.get('epic', '')
+                
+                # Epic değeri string olmayabilir, kontrol et
+                if not isinstance(epic, str):
+                    logging.warning(f"Non-string EPIC value found: {epic}, type: {type(epic)}")
+                    epic = str(epic) if epic is not None else ""
+                
+                instrument_type_value = market.get('instrumentType', '')
+                if not isinstance(instrument_type_value, str):
+                    instrument_type_value = str(instrument_type_value) if instrument_type_value is not None else ""
+                instrument_type_value = instrument_type_value.lower()
+                
+                # IG'nin EPIC isimlendirme formatına göre spreadbet tespiti
+                is_spreadbet = False
+                
+                # Önce API'nin döndüğü instrumentType'a bak
+                if 'spreadbet' in instrument_type_value:
+                    is_spreadbet = True
+                # EPIC formatına göre kontrol et (eğer epic string ise)
+                elif isinstance(epic, str) and epic:
+                    # Prefix kontrolü
+                    has_prefix = any(epic.startswith(prefix) for prefix in 
+                                    ['CS.D.', 'IX.D.', 'KA.D.', 'UA.D.', 'UD.D.', 'UK.D.', 'UP.D.'] 
+                                    if isinstance(epic, str))
+                    
+                    # Suffix kontrolü
+                    has_suffix = False
+                    if isinstance(epic, str):
+                        has_suffix = '.DAILY.IP' in epic or '.CASH.IP' in epic
+                    
+                    is_spreadbet = has_prefix or has_suffix
+                    
+                if is_spreadbet:
+                    # Spreadbet olarak işaretle
+                    market['instrumentType'] = 'SPREADBET'
+                    filtered_markets.append(market)
+                    
+                    logging.info(f"Found spreadbet market: {epic}")
+                    
+                    if len(filtered_markets) >= max_results:
+                        break
+                else:
+                    logging.debug(f"Skipping non-spreadbet market: {epic}, type: {instrument_type_value}")
+        else:
+            # Spreadbet olmayan filtreleme mantığı
+            filtered_markets = markets[:max_results]
+        
+        # Sonuçları daha ayrıntılı düzenle
+        results = []
+        for market in filtered_markets:
+            # Her alanı güvenli şekilde işle
+            epic = market.get('epic', '')
+            if not isinstance(epic, str):
+                epic = str(epic) if epic is not None else ""
+                
+            instrument_type_value = market.get('instrumentType', '')
+            if not isinstance(instrument_type_value, str):
+                instrument_type_value = str(instrument_type_value) if instrument_type_value is not None else ""
+            
+            # Güvenli bir spreadbet_compatible hesapla
+            spreadbet_compatible = False
+            
+            # instrumentType kontrolü
+            if isinstance(instrument_type_value, str) and 'SPREADBET' in instrument_type_value.upper():
+                spreadbet_compatible = True
+            # EPIC prefix kontrolü
+            elif isinstance(epic, str) and epic:
+                if any(epic.startswith(prefix) for prefix in 
+                      ['CS.D.', 'IX.D.', 'KA.D.', 'UA.D.', 'UD.D.', 'UK.D.', 'UP.D.']):
+                    spreadbet_compatible = True
+                # EPIC suffix kontrolü
+                elif '.DAILY.IP' in epic or '.CASH.IP' in epic:
+                    spreadbet_compatible = True
+            
+            results.append({
+                'epic': epic,
+                'name': str(market.get('instrumentName', '')),
+                'symbol': str(market.get('marketId', '')),
+                'instrumentType': instrument_type_value,
+                'expiry': str(market.get('expiry', '')),
+                'spreadbet_compatible': spreadbet_compatible
+            })
+        
+        return jsonify({
+            "status": "success",
+            "filter_type": instrument_type or "none",
+            "search_term": search_term or "none",
+            "count": len(results),
+            "markets": results
+        })
+        
+    except Exception as e:
+        logging.error(f"Error listing markets: {e}")
+        # Detaylı hata izleme için stack trace
+        import traceback
+        stack_trace = traceback.format_exc()
+        logging.error(f"Stack trace: {stack_trace}")
+        
+        return jsonify({
+            "status": "error",
+            "message": f"Error listing markets: {str(e)}",
+            "traceback": stack_trace
+        }), 500
+
+@app.route('/markets/spreadbet', methods=['GET'])
+def list_spreadbet_markets():
+    """Get all spreadbet markets available in the ticker data"""
+    try:
+        # CSV dosyasından ticker verilerini yükle
+        ticker_data = load_ticker_data()
+        if ticker_data.empty:
+            return jsonify({
+                "status": "error",
+                "message": "Ticker data file is empty or not found"
+            }), 404
+        
+        # IG API oturumunu kontrol et
+        if not webhook_handler.trade_manager.ig_client._ensure_session():
+            return jsonify({
+                "status": "error",
+                "message": "Failed to authenticate with IG API"
+            }), 401
+        
+        # CSV dosyasından EPIC bilgilerini topla
+        epics_to_check = []
+        epic_to_symbol_map = {}
+        
+        if 'IG EPIC' in ticker_data.columns:
+            for index, row in ticker_data.iterrows():
+                try:
+                    symbol = row.get('Symbol', '')
+                    epic = row.get('IG EPIC', '')
+                    
+                    # EPIC değeri string mi kontrol et
+                    if not isinstance(epic, str):
+                        if epic is None or pd.isna(epic):
+                            continue
+                        epic = str(epic)
+                    
+                    # Boş veya geçersiz değerleri atla
+                    if not epic or epic == '?':
+                        continue
+                        
+                    epics_to_check.append(epic)
+                    epic_to_symbol_map[epic] = symbol
+                    
+                except Exception as row_error:
+                    logging.warning(f"Error processing row {index}: {row_error}")
+                    continue
+        
+        logging.info(f"Found {len(epics_to_check)} EPICs to check in ticker data")
+        
+        # Spreadbet türündeki piyasaları bul
+        spreadbet_markets = []
+        error_markets = []
+        
+        for epic in epics_to_check:
+            try:
+                # EPIC değeri string mi tekrar kontrol et
+                if not isinstance(epic, str):
+                    logging.warning(f"Non-string EPIC encountered: {epic}, type: {type(epic)}")
+                    continue
+                
+                logging.info(f"Checking market details for EPIC: {epic}")
+                
+                # Market detaylarını çek
+                market_details = webhook_handler.trade_manager.ig_client._get_market_details(epic)
+                
+                if not market_details:
+                    logging.warning(f"No market details found for EPIC: {epic}")
+                    continue
+                
+                # Instrument bilgisini kontrol et
+                instrument = market_details.get('instrument', {})
+                if not instrument:
+                    logging.warning(f"No instrument data for EPIC: {epic}")
+                    continue
+                
+                # Instrument type'ı al
+                instrument_type = instrument.get('type', '')
+                if not isinstance(instrument_type, str):
+                    instrument_type = str(instrument_type) if instrument_type is not None else ""
+                instrument_type = instrument_type.lower()
+                
+                # Spreadbet olup olmadığını kontrol et
+                is_spreadbet = 'spreadbet' in instrument_type
+                
+                if is_spreadbet:
+                    spreadbet_markets.append({
+                        'epic': epic,
+                        'symbol': epic_to_symbol_map.get(epic, ''),
+                        'instrumentType': instrument_type,
+                        'name': instrument.get('name', ''),
+                        'controlledRiskAllowed': bool(instrument.get('controlledRiskAllowed', False)),
+                        'currency': market_details.get('currency', ''),
+                        'market_status': market_details.get('market_status', '')
+                    })
+                    logging.info(f"Found spreadbet market: {epic}")
+                else:
+                    logging.debug(f"Skipping non-spreadbet market: {epic} with type: {instrument_type}")
+                
+                # API'yi çok hızlı sorgulamaktan kaçınmak için kısa bir bekleme
+                time.sleep(0.1)
+                
+            except Exception as e:
+                logging.warning(f"Error checking EPIC {epic}: {e}")
+                error_markets.append({
+                    'epic': epic,
+                    'symbol': epic_to_symbol_map.get(epic, ''),
+                    'error': str(e)
+                })
+                continue
+        
+        return jsonify({
+            "status": "success",
+            "count": len(spreadbet_markets),
+            "markets": spreadbet_markets,
+            "errors": error_markets
+        })
+        
+    except Exception as e:
+        # Detaylı hata izleme
+        import traceback
+        stack_trace = traceback.format_exc()
+        logging.error(f"Error listing spreadbet markets: {e}")
+        logging.error(f"Stack trace: {stack_trace}")
+        
+        return jsonify({
+            "status": "error",
+            "message": f"Error listing spreadbet markets: {str(e)}",
+            "traceback": stack_trace
+        }), 500
+
+@app.route('/test/instrument/<epic>', methods=['GET'])
+def test_instrument_details(epic):
+    """Test endpoint to get instrument details for a specific EPIC"""
+    try:
+        # IG API oturumunu kontrol et
+        if not webhook_handler.trade_manager.ig_client._ensure_session():
+            return jsonify({
+                "status": "error",
+                "message": "Failed to authenticate with IG API"
+            }), 401
+            
+        # Endpoint URL ve header hazırlama
+        base_url = webhook_handler.trade_manager.ig_client.BASE_URL
+        market_url = f"{base_url}/markets/{epic}"
+        market_headers = webhook_handler.trade_manager.ig_client.headers.copy()
+        market_headers['Version'] = '3'  # Version 3 provides more detailed market data
+        
+        try:
+            # API isteği yap
+            logging.info(f"Requesting market details for EPIC: {epic}")
+            market_response = webhook_handler.trade_manager.ig_client.session.get(market_url, headers=market_headers)
+            
+            # Tam API yanıtını göster
+            logging.info(f"Response status: {market_response.status_code}")
+            
+            raw_response = None
+            if market_response.status_code == 200:
+                raw_response = market_response.json()
+                
+                # Log instrument type
+                instrument_type = raw_response.get('instrument', {}).get('type', 'UNKNOWN')
+                logging.info(f"Instrument type for {epic}: {instrument_type}")
+                
+                # Check if it's a spreadbet
+                is_spreadbet = 'SPREADBET' in instrument_type.upper()
+                logging.info(f"Is spreadbet: {is_spreadbet}")
+                
+                # Tüm yanıtı döndür
+                return jsonify({
+                    "status": "success",
+                    "epic": epic,
+                    "instrument_type": instrument_type,
+                    "is_spreadbet": is_spreadbet,
+                    "raw_api_response": raw_response
+                })
+            else:
+                error_msg = ""
+                try:
+                    error_content = market_response.json()
+                    error_msg = error_content.get('errorCode', '') or json.dumps(error_content)
+                except:
+                    error_msg = market_response.text
+                    
+                logging.error(f"API error for {epic}: {market_response.status_code} - {error_msg}")
+                return jsonify({
+                    "status": "error",
+                    "message": f"API error: {market_response.status_code}",
+                    "error_details": error_msg,
+                    "epic": epic,
+                    "raw_response": raw_response or market_response.text
+                }), market_response.status_code
+                
+        except Exception as e:
+            logging.error(f"Exception getting market details for {epic}: {e}")
+            return jsonify({
+                "status": "error",
+                "message": f"Exception: {str(e)}",
+                "epic": epic
+            }), 500
+            
+    except Exception as e:
+        logging.error(f"Error in test endpoint: {e}")
+        return jsonify({
+            "status": "error",
+            "message": f"Error in test endpoint: {str(e)}"
+        }), 500
+
+@app.route('/epic/lookup', methods=['GET'])
+def lookup_epic():
+    """Sembolden (işlem çifti) EPIC kodunu bulan endpoint"""
+    try:
+        # Get query parameters
+        symbol = request.args.get('symbol', '')
+        
+        if not symbol:
+            return jsonify({
+                "status": "error",
+                "message": "Symbol parameter is required"
+            }), 400
+            
+        logging.info(f"Looking up EPIC for symbol: {symbol}")
+        
+        # IG API oturumunu kontrol et
+        if not webhook_handler.trade_manager.ig_client._ensure_session():
+            return jsonify({
+                "status": "error",
+                "message": "Failed to authenticate with IG API"
+            }), 401
+        
+        # Önce ticker data dosyasında bu sembole karşılık gelen EPIC kodu var mı kontrol et
+        ticker_data = load_ticker_data()
+        csv_epic = None
+        
+        if not ticker_data.empty and 'Symbol' in ticker_data.columns and 'IG EPIC' in ticker_data.columns:
+            # Sembol ile eşleşen satırı bul
+            for index, row in ticker_data.iterrows():
+                csv_symbol = str(row.get('Symbol', ''))
+                if csv_symbol.lower() == symbol.lower():
+                    epic_value = row.get('IG EPIC')
+                    if epic_value and epic_value != '?' and not pd.isna(epic_value):
+                        csv_epic = str(epic_value)
+                        logging.info(f"Found EPIC in CSV: {csv_epic} for symbol {symbol}")
+                        break
+        
+        # IG API'den EPIC kodunu ara
+        api_epic = webhook_handler.trade_manager.ig_client.get_epic_from_symbol(symbol)
+        
+        # Eğer API'den EPIC kodu alındıysa, bu değeri kullan
+        found_epic = api_epic if api_epic else csv_epic
+        
+        if not found_epic:
+            return jsonify({
+                "status": "error",
+                "message": f"No EPIC found for symbol: {symbol}"
+            }), 404
+            
+        # EPIC'in detaylarını al (instrument type vb.)
+        epic_details = None
+        instrument_type = "UNKNOWN"
+        is_spreadbet = False
+        controlled_risk_allowed = False
+        
+        try:
+            # Market detaylarını çek
+            market_details = webhook_handler.trade_manager.ig_client._get_market_details(found_epic)
+            
+            if market_details and 'instrument' in market_details:
+                instrument = market_details.get('instrument', {})
+                instrument_type = str(instrument.get('type', 'UNKNOWN'))
+                is_spreadbet = 'SPREADBET' in instrument_type.upper()
+                controlled_risk_allowed = bool(instrument.get('controlledRiskAllowed', False))
+                
+                epic_details = {
+                    'name': str(instrument.get('name', '')),
+                    'currency': market_details.get('currency', ''),
+                    'market_status': market_details.get('market_status', ''),
+                    'bid': market_details.get('bid'),
+                    'offer': market_details.get('offer'),
+                    'min_stop_distance': market_details.get('min_stop_distance'),
+                    'min_limit_distance': market_details.get('min_limit_distance')
+                }
+        except Exception as e:
+            logging.warning(f"Could not get market details for {found_epic}: {e}")
+            # Detayları alamazsa işleme devam et ama uyarı ver
+        
+        # Yanıtı oluştur
+        result = {
+            "status": "success",
+            "symbol": symbol,
+            "epic": found_epic,
+            "source": "API" if api_epic else "CSV" if csv_epic else "UNKNOWN",
+            "instrument_type": instrument_type,
+            "is_spreadbet": is_spreadbet,
+            "controlled_risk_allowed": controlled_risk_allowed
+        }
+        
+        # Eğer EPIC detayları alınabildiyse ekle
+        if epic_details:
+            result["epic_details"] = epic_details
+            
+        return jsonify(result)
+        
+    except Exception as e:
+        # Detaylı hata izleme
+        import traceback
+        stack_trace = traceback.format_exc()
+        logging.error(f"Error looking up EPIC: {e}")
+        logging.error(f"Stack trace: {stack_trace}")
+        
+        return jsonify({
+            "status": "error",
+            "message": f"Error looking up EPIC: {str(e)}",
+            "traceback": stack_trace
+        }), 500
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))

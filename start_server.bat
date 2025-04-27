@@ -1,0 +1,3 @@
+@echo off
+echo Starting Trading Bot Server...
+python app.py 
