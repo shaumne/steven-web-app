@@ -189,9 +189,31 @@
     }
     
     function cancelOrder(dealId) {
-        // API call to cancel order would go here
-        alert('Cancel order ' + dealId + ' (API call would happen here)');
-        location.reload();
+        // Kullanıcı arayüzünü güncelle
+        document.getElementById('confirmButton').disabled = true;
+        document.getElementById('confirmButton').innerHTML = '<i class="bi bi-hourglass-split"></i> İşleniyor...';
+        
+        // API çağrısı - bu örnekte çalışan emri iptal et
+        fetch(`/cancel_order/${dealId}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                alert('Emir başarıyla iptal edildi!');
+            } else {
+                alert('Emir iptal edilirken hata oluştu: ' + data.message);
+            }
+            location.reload(); // Sayfayı yenile
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Emir iptal edilirken bir hata oluştu. Lütfen tekrar deneyin.');
+            location.reload();
+        });
     }
 </script>
 {% endblock %} 

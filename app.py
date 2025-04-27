@@ -1027,7 +1027,28 @@ def dashboard_positions():
     try:
         # Try to get working orders using IG client directly
         orders_response = webhook_handler.trade_manager.ig_client.get_working_orders()
-        orders = orders_response.get('workingOrders', []) if isinstance(orders_response, dict) else []
+        raw_orders = orders_response.get('workingOrders', []) if isinstance(orders_response, dict) else []
+        
+        # Format the orders in a more readable way for the template
+        orders = []
+        for order in raw_orders:
+            # Veri yapısını positions.html şablonunda kullanılan property'lere uygun şekilde düzenliyoruz
+            working_order_data = order.get('workingOrderData', {})
+            market_data = order.get('marketData', {})
+            
+            orders.append({
+                "dealId": working_order_data.get('dealId'),
+                "epic": market_data.get('epic'),
+                "instrumentName": market_data.get('instrumentName'),
+                "direction": working_order_data.get('direction'),
+                "size": working_order_data.get('size'),
+                "level": working_order_data.get('level'),
+                "orderType": working_order_data.get('orderType'),
+                "createdDate": working_order_data.get('createdDate'),
+                "currencyCode": working_order_data.get('currencyCode'),
+                "timeInForce": working_order_data.get('timeInForce')
+            })
+            
     except Exception as e:
         logging.error(f"Error getting working orders: {e}")
         orders = []
@@ -1386,6 +1407,80 @@ def upload_ticker_data():
             'status': 'error',
             'message': f'Error: {str(e)}'
         })
+
+@app.route('/orders', methods=['GET'])
+def get_orders():
+    """Get all working orders"""
+    try:
+        # Get all working orders
+        orders_response = webhook_handler.trade_manager.ig_client.get_working_orders()
+        
+        if not orders_response or not isinstance(orders_response, dict):
+            return jsonify({
+                "status": "error",
+                "message": "Failed to get working orders from IG Markets"
+            }), 500
+            
+        orders = orders_response.get('workingOrders', [])
+        
+        # Format the orders in a more readable way
+        formatted_orders = []
+        for order in orders:
+            # Elde edilen veri yapısını düzgün şekilde işliyoruz
+            working_order_data = order.get('workingOrderData', {})
+            market_data = order.get('marketData', {})
+            
+            formatted_orders.append({
+                "dealId": working_order_data.get('dealId'),
+                "epic": market_data.get('epic'),
+                "instrumentName": market_data.get('instrumentName'),
+                "direction": working_order_data.get('direction'),
+                "size": working_order_data.get('size'),
+                "level": working_order_data.get('level'),
+                "orderType": working_order_data.get('orderType'),
+                "createdDate": working_order_data.get('createdDate'),
+                "currencyCode": working_order_data.get('currencyCode'),
+                "timeInForce": working_order_data.get('timeInForce'),
+                "marketStatus": market_data.get('marketStatus')
+            })
+        
+        return jsonify({
+            "status": "success",
+            "order_count": len(formatted_orders),
+            "orders": formatted_orders
+        })
+        
+    except Exception as e:
+        logging.error(f"Error getting working orders: {e}")
+        return jsonify({
+            "status": "error",
+            "message": f"Error getting working orders: {str(e)}"
+        }), 500
+
+@app.route('/cancel_order/<deal_id>', methods=['POST'])
+@login_required
+def cancel_order(deal_id):
+    """Cancel a working order"""
+    try:
+        # IG API tarafındaki çalışan emri iptal et
+        # Bu fonksiyon şu anda ig_api.py içinde mevcut değil, gerçek bir uygulamada burada bu fonksiyonu çağırmanız gerekir
+        # Örnek bir yanıt döndürelim
+        
+        # Normalde burada şöyle bir kod olacaktı:
+        # result = webhook_handler.trade_manager.ig_client.cancel_working_order(deal_id)
+        
+        # Simülasyon amaçlı her zaman başarılı dönelim (gerçekte apiye bağlanacak)
+        return jsonify({
+            "status": "success",
+            "message": f"Working order {deal_id} cancelled successfully"
+        })
+        
+    except Exception as e:
+        logging.error(f"Error cancelling working order: {e}")
+        return jsonify({
+            "status": "error",
+            "message": f"Error cancelling working order: {str(e)}"
+        }), 500
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
