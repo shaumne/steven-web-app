@@ -6,15 +6,35 @@ import logging
 import json
 import time
 import pandas as pd
-from flask import Flask, request, jsonify
+import psutil
+import datetime
+from flask import Flask, request, jsonify, render_template, session, redirect, url_for, flash, send_file, abort
+from werkzeug.security import check_password_hash
+from flask_cors import CORS
 from trading_bot.webhook_handler import WebhookHandler
 from trading_bot.config import load_ticker_data
+from trading_bot.auth import init_users_file, get_users, authenticate_user, login_required, admin_required
+from trading_bot.ig_api import IGClient
 
 # Initialize Flask app
 app = Flask(__name__)
+app.secret_key = os.environ.get('SECRET_KEY', 'trading_bot_secret_key')
+app.config['SESSION_TYPE'] = 'filesystem'
+app.config['PERMANENT_SESSION_LIFETIME'] = datetime.timedelta(hours=12)
 
 # Initialize webhook handler
 webhook_handler = WebhookHandler()
+
+# Initialize the users file
+init_users_file()
+
+@app.route('/')
+def index():
+    """Root endpoint - redirects to dashboard if logged in, otherwise to login page"""
+    if 'user' in session:
+        return redirect(url_for('dashboard'))
+    else:
+        return redirect(url_for('login'))
 
 @app.route('/health', methods=['GET'])
 def health_check():
@@ -855,6 +875,517 @@ def lookup_epic():
             "message": f"Error looking up EPIC: {str(e)}",
             "traceback": stack_trace
         }), 500
+
+# Dashboard routes
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    """Login page for the dashboard"""
+    if request.method == 'POST':
+        username = request.form.get('username')
+        password = request.form.get('password')
+        
+        # Authenticate user
+        authenticated, role = authenticate_user(username, password)
+        
+        if authenticated:
+            # Set session variables
+            session['user'] = username
+            session['role'] = role
+            
+            # Redirect to the dashboard or saved next_url
+            next_url = session.pop('next_url', url_for('dashboard'))
+            flash(f'Welcome back, {username}!', 'success')
+            return redirect(next_url)
+        else:
+            flash('Invalid username or password', 'danger')
+    
+    return render_template('login.html')
+
+@app.route('/logout')
+def logout():
+    """Logout user and clear session"""
+    if 'user' in session:
+        user = session.pop('user')
+        session.clear()
+        flash(f'You have been logged out, {user}', 'info')
+    
+    return redirect(url_for('login'))
+
+@app.route('/dashboard')
+@login_required
+def dashboard():
+    """Main dashboard page"""
+    # Get API connection status
+    ig_connected = webhook_handler.trade_manager.ig_client._ensure_session()
+    
+    # Get open positions
+    positions_response = webhook_handler.trade_manager.get_all_positions()
+    open_positions = len(positions_response.get('positions', [])) if positions_response.get('status') == 'success' else 0
+    
+    # Get working orders - fixing the missing method issue
+    try:
+        # Try to get working orders using IG client directly
+        orders_response = webhook_handler.trade_manager.ig_client.get_working_orders()
+        working_orders = len(orders_response.get('workingOrders', [])) if isinstance(orders_response, dict) else 0
+    except Exception as e:
+        logging.error(f"Error getting working orders: {e}")
+        working_orders = 0
+    
+    # Get today's trades
+    today_trades = len(webhook_handler.trade_manager.today_trades)
+    
+    # Get recent trades
+    recent_trades = []
+    try:
+        history_response = webhook_handler.trade_manager.get_transaction_history(days=7, max_results=10)
+        if history_response.get('status') == 'success':
+            for trade in history_response.get('transactions', []):
+                status = trade.get('status', 'UNKNOWN')
+                status_color = {
+                    'OPEN': 'success',
+                    'CLOSED': 'secondary',
+                    'DELETED': 'danger',
+                    'REJECTED': 'warning'
+                }.get(status, 'info')
+                
+                recent_trades.append({
+                    'time': trade.get('date', ''),
+                    'symbol': trade.get('instrumentName', ''),
+                    'direction': trade.get('direction', ''),
+                    'price': trade.get('openLevel', 0),
+                    'size': trade.get('size', 0),
+                    'status': status,
+                    'status_color': status_color,
+                    'reference': trade.get('dealReference', '')
+                })
+    except Exception as e:
+        logging.error(f"Error getting recent trades: {e}")
+    
+    # Get system resources
+    try:
+        memory_usage = f"{psutil.virtual_memory().percent}%"
+        cpu_usage = f"{psutil.cpu_percent()}%"
+        disk_usage = f"{psutil.disk_usage('/').percent}%"
+        
+        # Calculate uptime
+        uptime_seconds = time.time() - psutil.boot_time()
+        days, remainder = divmod(uptime_seconds, 86400)
+        hours, remainder = divmod(remainder, 3600)
+        minutes, _ = divmod(remainder, 60)
+        uptime = f"{int(days)} days, {int(hours)} hours, {int(minutes)} minutes"
+    except Exception as e:
+        logging.error(f"Error getting system resources: {e}")
+        memory_usage = "N/A"
+        cpu_usage = "N/A"
+        disk_usage = "N/A"
+        uptime = "N/A"
+    
+    # Get activity data for the chart
+    activity_dates = []
+    activity_counts = []
+    try:
+        # Get the last 7 days
+        for i in range(6, -1, -1):
+            date = (datetime.datetime.now() - datetime.timedelta(days=i)).strftime('%Y-%m-%d')
+            activity_dates.append(date)
+            
+            # Count trades for this day
+            count = 0
+            for trade in webhook_handler.trade_manager.today_trades.values():
+                trade_date = trade.get('time', datetime.datetime.now()).strftime('%Y-%m-%d')
+                if trade_date == date:
+                    count += 1
+            activity_counts.append(count)
+    except Exception as e:
+        logging.error(f"Error calculating activity data: {e}")
+        activity_dates = [day for day in ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']]
+        activity_counts = [0, 0, 0, 0, 0, 0, 0]
+    
+    return render_template('dashboard.html',
+                          ig_connected=ig_connected,
+                          open_positions=open_positions,
+                          working_orders=working_orders,
+                          today_trades=today_trades,
+                          recent_trades=recent_trades,
+                          memory_usage=memory_usage,
+                          cpu_usage=cpu_usage,
+                          disk_usage=disk_usage,
+                          uptime=uptime,
+                          activity_dates=activity_dates,
+                          activity_counts=activity_counts)
+
+@app.route('/dashboard/positions')
+@login_required
+def dashboard_positions():
+    """Positions management page"""
+    # Get all open positions
+    positions_response = webhook_handler.trade_manager.get_all_positions()
+    positions = positions_response.get('positions', []) if positions_response.get('status') == 'success' else []
+    
+    # Get working orders - fixing the missing method issue
+    try:
+        # Try to get working orders using IG client directly
+        orders_response = webhook_handler.trade_manager.ig_client.get_working_orders()
+        orders = orders_response.get('workingOrders', []) if isinstance(orders_response, dict) else []
+    except Exception as e:
+        logging.error(f"Error getting working orders: {e}")
+        orders = []
+    
+    return render_template('positions.html', positions=positions, orders=orders)
+
+@app.route('/dashboard/settings')
+@login_required
+def dashboard_settings():
+    """Settings management page"""
+    # Load ticker data
+    ticker_data = load_ticker_data()
+    
+    # Get IG API credentials
+    ig_username = os.environ.get('IG_USERNAME', '')
+    ig_api_key = os.environ.get('IG_API_KEY', '')
+    ig_demo = os.environ.get('IG_DEMO', '1') == '1'
+    
+    # Get webhook settings
+    webhook_url = request.host_url + 'webhook'
+    
+    return render_template('settings.html',
+                          ticker_data=ticker_data,
+                          ticker_count=len(ticker_data) if not ticker_data.empty else 0,
+                          ig_username=ig_username,
+                          ig_api_key='*' * len(ig_api_key) if ig_api_key else '',
+                          ig_demo=ig_demo,
+                          webhook_url=webhook_url)
+
+@app.route('/dashboard/logs')
+@login_required
+def dashboard_logs():
+    """Logs viewing page"""
+    # Get log files
+    log_files = []
+    log_directory = os.environ.get('LOG_DIRECTORY', '.')
+    
+    try:
+        for file in os.listdir(log_directory):
+            if file.endswith('.log'):
+                file_path = os.path.join(log_directory, file)
+                file_size = os.path.getsize(file_path)
+                file_mtime = os.path.getmtime(file_path)
+                
+                # Get the last few lines of the log file
+                try:
+                    with open(file_path, 'r') as f:
+                        lines = f.readlines()
+                        preview = ''.join(lines[-5:]) if lines else "Log file is empty"
+                except Exception as e:
+                    preview = f"Error reading log file: {e}"
+                
+                log_files.append({
+                    'name': file,
+                    'path': file_path,
+                    'size': file_size,
+                    'modified': datetime.datetime.fromtimestamp(file_mtime).strftime('%Y-%m-%d %H:%M:%S'),
+                    'preview': preview
+                })
+    except Exception as e:
+        logging.error(f"Error reading log directory: {e}")
+    
+    return render_template('logs.html', log_files=log_files)
+
+@app.route('/view/log/<path:filename>')
+@login_required
+def view_log(filename):
+    """View a specific log file"""
+    log_directory = os.environ.get('LOG_DIRECTORY', '.')
+    file_path = os.path.join(log_directory, filename)
+    
+    # Security check to prevent directory traversal
+    if not os.path.exists(file_path) or '..' in filename:
+        flash('Log file not found', 'danger')
+        return redirect(url_for('dashboard_logs'))
+    
+    try:
+        with open(file_path, 'r') as f:
+            content = f.read()
+    except Exception as e:
+        flash(f'Error reading log file: {e}', 'danger')
+        content = ''
+    
+    return render_template('view_log.html', filename=filename, content=content)
+
+@app.route('/view/trade/<reference>')
+@login_required
+def view_trade(reference):
+    """View details for a specific trade"""
+    # Get position status
+    trade_details = webhook_handler.trade_manager.check_position_status(deal_reference=reference)
+    
+    return render_template('view_trade.html', trade=trade_details, reference=reference)
+
+@app.route('/test/webhook')
+@login_required
+def test_webhook():
+    """Test webhook functionality"""
+    return render_template('test_webhook.html')
+
+@app.route('/api/docs')
+@login_required
+def api_docs():
+    """API documentation page"""
+    # Set the base URL for API docs
+    base_url = request.host
+    
+    return render_template('api_docs.html', base_url=base_url)
+
+@app.route('/admin/panel')
+@admin_required
+def admin_panel():
+    """Admin panel for user management"""
+    users = get_users()
+    
+    return render_template('admin_panel.html', users=users)
+
+@app.route('/admin/users/add', methods=['POST'])
+@admin_required
+def add_user():
+    """Add a new user"""
+    username = request.form.get('username')
+    password = request.form.get('password')
+    role = request.form.get('role', 'user')
+    
+    if not username or not password:
+        flash('Username and password are required', 'danger')
+        return redirect(url_for('admin_panel'))
+    
+    # Load existing users
+    users = get_users()
+    
+    # Check if username already exists
+    if username in users:
+        flash(f'User "{username}" already exists', 'warning')
+        return redirect(url_for('admin_panel'))
+    
+    # Add new user
+    users[username] = {
+        'password': password,
+        'role': role
+    }
+    
+    # Save users back to file
+    try:
+        with open(webhook_handler.auth.USERS_FILE, 'w') as f:
+            json.dump(users, f, indent=4)
+        flash(f'User "{username}" added successfully', 'success')
+    except Exception as e:
+        flash(f'Error adding user: {e}', 'danger')
+    
+    return redirect(url_for('admin_panel'))
+
+@app.route('/admin/users/delete/<username>')
+@admin_required
+def delete_user(username):
+    """Delete a user"""
+    if username == session.get('user'):
+        flash('You cannot delete your own account', 'danger')
+        return redirect(url_for('admin_panel'))
+    
+    # Load existing users
+    users = get_users()
+    
+    # Check if user exists
+    if username not in users:
+        flash(f'User "{username}" not found', 'warning')
+        return redirect(url_for('admin_panel'))
+    
+    # Delete user
+    del users[username]
+    
+    # Save users back to file
+    try:
+        with open(webhook_handler.auth.USERS_FILE, 'w') as f:
+            json.dump(users, f, indent=4)
+        flash(f'User "{username}" deleted successfully', 'success')
+    except Exception as e:
+        flash(f'Error deleting user: {e}', 'danger')
+    
+    return redirect(url_for('admin_panel'))
+
+@app.route('/admin/users/change-password', methods=['POST'])
+@admin_required
+def change_password():
+    """Change a user's password"""
+    username = request.form.get('username')
+    password = request.form.get('password')
+    
+    if not username or not password:
+        flash('Username and password are required', 'danger')
+        return redirect(url_for('admin_panel'))
+    
+    # Load existing users
+    users = get_users()
+    
+    # Check if user exists
+    if username not in users:
+        flash(f'User "{username}" not found', 'warning')
+        return redirect(url_for('admin_panel'))
+    
+    # Update password
+    users[username]['password'] = password
+    
+    # Save users back to file
+    try:
+        with open(webhook_handler.auth.USERS_FILE, 'w') as f:
+            json.dump(users, f, indent=4)
+        flash(f'Password for "{username}" changed successfully', 'success')
+    except Exception as e:
+        flash(f'Error changing password: {e}', 'danger')
+    
+    return redirect(url_for('admin_panel'))
+
+@app.route('/api/test_connection', methods=['GET'])
+@login_required
+def test_connection():
+    """Test connection to IG API"""
+    try:
+        # Attempt to login to IG API
+        success = webhook_handler.trade_manager.ig_client.login()
+        
+        if success:
+            return jsonify({
+                'status': 'success',
+                'message': 'Successfully connected to IG API'
+            })
+        else:
+            return jsonify({
+                'status': 'error',
+                'message': 'Failed to connect to IG API. Please check your credentials.'
+            })
+    except Exception as e:
+        logging.error(f"Error testing IG API connection: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': f'Error: {str(e)}'
+        })
+
+@app.route('/api/save_settings', methods=['POST'])
+@login_required
+def save_settings():
+    """Save IG API settings"""
+    try:
+        data = request.json
+        
+        if not data:
+            return jsonify({
+                'status': 'error',
+                'message': 'No data provided'
+            })
+        
+        # Extract settings
+        username = data.get('username')
+        api_key = data.get('api_key')
+        demo = data.get('demo', False)
+        
+        # Validate settings
+        if not username or not api_key:
+            return jsonify({
+                'status': 'error',
+                'message': 'Username and API key are required'
+            })
+        
+        # Update environment variables
+        os.environ['IG_USERNAME'] = username
+        os.environ['IG_API_KEY'] = api_key
+        os.environ['IG_DEMO'] = '1' if demo else '0'
+        
+        # Create a .env file to persist settings
+        env_file_path = os.path.join(os.path.dirname(__file__), '.env')
+        
+        with open(env_file_path, 'w') as f:
+            f.write(f"IG_USERNAME={username}\n")
+            f.write(f"IG_API_KEY={api_key}\n")
+            f.write(f"IG_DEMO={'1' if demo else '0'}\n")
+        
+        # Reset IG client to use new settings
+        webhook_handler.trade_manager.ig_client = IGClient()
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'Settings saved successfully'
+        })
+    except Exception as e:
+        logging.error(f"Error saving settings: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': f'Error: {str(e)}'
+        })
+
+@app.route('/api/upload_ticker_data', methods=['POST'])
+@login_required
+def upload_ticker_data():
+    """Upload new ticker data CSV file"""
+    try:
+        if 'file' not in request.files:
+            return jsonify({
+                'status': 'error',
+                'message': 'No file provided'
+            })
+        
+        file = request.files['file']
+        
+        if file.filename == '':
+            return jsonify({
+                'status': 'error',
+                'message': 'No file selected'
+            })
+            
+        if not file.filename.endswith('.csv'):
+            return jsonify({
+                'status': 'error',
+                'message': 'File must be a CSV file'
+            })
+        
+        # Save the file
+        try:
+            ticker_data_path = os.path.join(os.path.dirname(__file__), 'ticker_data.csv')
+            file.save(ticker_data_path)
+            
+            # Validate the file format
+            try:
+                df = pd.read_csv(ticker_data_path)
+                required_columns = ['Symbol', 'IG EPIC', 'ATR Stop Loss Period', 'ATR Stop Loss Multiple', 
+                                   'ATR Profit Target Period', 'ATR Profit Multiple', 'Postion Size Max GBP']
+                
+                missing_columns = [col for col in required_columns if col not in df.columns]
+                
+                if missing_columns:
+                    return jsonify({
+                        'status': 'error',
+                        'message': f'CSV file is missing required columns: {", ".join(missing_columns)}'
+                    })
+                
+                return jsonify({
+                    'status': 'success',
+                    'message': f'Successfully uploaded ticker data with {len(df)} instruments'
+                })
+                
+            except Exception as e:
+                return jsonify({
+                    'status': 'error',
+                    'message': f'Error validating CSV file: {str(e)}'
+                })
+                
+        except Exception as e:
+            return jsonify({
+                'status': 'error',
+                'message': f'Error saving file: {str(e)}'
+            })
+            
+    except Exception as e:
+        logging.error(f"Error uploading ticker data: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': f'Error: {str(e)}'
+        })
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))

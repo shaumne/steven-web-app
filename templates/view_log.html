@@ -1,0 +1,315 @@
+{% extends "layout.html" %}
+
+{% block title %}View Log: {{ filename }} - Trading Bot{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-sm-flex align-items-center justify-content-between mb-4">
+        <h1 class="h3 mb-0 text-gray-800">Log File: {{ filename }}</h1>
+        <div>
+            <a href="{{ url_for('dashboard_logs') }}" class="d-none d-sm-inline-block btn btn-sm btn-secondary shadow-sm mr-2">
+                <i class="bi bi-arrow-left"></i> Back to Logs
+            </a>
+            <button class="d-none d-sm-inline-block btn btn-sm btn-primary shadow-sm" id="btnCopy">
+                <i class="bi bi-clipboard"></i> Copy
+            </button>
+            <button class="d-none d-sm-inline-block btn btn-sm btn-info shadow-sm" id="btnDownload">
+                <i class="bi bi-download"></i> Download
+            </button>
+        </div>
+    </div>
+
+    <!-- Log Content Card -->
+    <div class="card shadow mb-4">
+        <div class="card-header py-3 d-flex justify-content-between align-items-center">
+            <h6 class="m-0 font-weight-bold text-primary">File Content</h6>
+            <div class="btn-group" role="group">
+                <button class="btn btn-sm btn-outline-secondary" id="btnWrap">
+                    <i class="bi bi-text-wrap"></i> Toggle Wrap
+                </button>
+                <button class="btn btn-sm btn-outline-secondary" id="btnSearch">
+                    <i class="bi bi-search"></i> Search
+                </button>
+                <button class="btn btn-sm btn-outline-secondary" id="btnScrollToBottom">
+                    <i class="bi bi-arrow-down-circle"></i> Bottom
+                </button>
+                <button class="btn btn-sm btn-outline-secondary" id="btnScrollToTop">
+                    <i class="bi bi-arrow-up-circle"></i> Top
+                </button>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="log-search mb-3" id="searchArea" style="display: none;">
+                <div class="input-group">
+                    <input type="text" class="form-control" id="searchText" placeholder="Search in log...">
+                    <button class="btn btn-primary" type="button" id="btnSearchText">
+                        <i class="bi bi-search"></i>
+                    </button>
+                    <button class="btn btn-secondary" type="button" id="btnClearSearch">
+                        <i class="bi bi-x-circle"></i>
+                    </button>
+                </div>
+                <div class="mt-2 search-results" id="searchResults" style="display: none;">
+                    <span class="badge bg-primary" id="resultCount">0</span> results found
+                    <button class="btn btn-sm btn-primary" id="btnNextResult">Next</button>
+                    <button class="btn btn-sm btn-primary" id="btnPrevResult">Previous</button>
+                </div>
+            </div>
+            <pre id="logContent" class="log-content">{{ content }}</pre>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .log-content {
+        background-color: #f8f9fc;
+        padding: 15px;
+        border-radius: 4px;
+        font-family: monospace;
+        font-size: 0.85rem;
+        color: #333;
+        overflow-x: auto;
+        max-height: calc(100vh - 250px);
+        min-height: 400px;
+        white-space: pre;
+        line-height: 1.5;
+    }
+    
+    .log-content.wrapped {
+        white-space: pre-wrap;
+    }
+    
+    .match-highlight {
+        background-color: yellow;
+        color: black;
+    }
+    
+    .current-match {
+        background-color: #ff9800;
+        color: white;
+    }
+    
+    .log-line {
+        padding: 1px 0;
+    }
+    
+    .log-line:hover {
+        background-color: rgba(0, 0, 0, 0.05);
+    }
+    
+    .log-line:nth-child(even) {
+        background-color: rgba(0, 0, 0, 0.02);
+    }
+    
+    .error-line {
+        color: #dc3545;
+        font-weight: bold;
+    }
+    
+    .warning-line {
+        color: #ffc107;
+    }
+    
+    .info-line {
+        color: #007bff;
+    }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Document ready
+    $(document).ready(function() {
+        // Format log lines
+        const logContentElement = document.getElementById('logContent');
+        if (logContentElement) {
+            let content = logContentElement.textContent;
+            let lines = content.split('\n');
+            let formattedContent = '';
+            
+            lines.forEach((line, index) => {
+                let lineClass = 'log-line';
+                if (line.includes('ERROR') || line.includes('error')) {
+                    lineClass += ' error-line';
+                } else if (line.includes('WARNING') || line.includes('warning')) {
+                    lineClass += ' warning-line';
+                } else if (line.includes('INFO') || line.includes('info')) {
+                    lineClass += ' info-line';
+                }
+                
+                formattedContent += `<div class="${lineClass}" id="line-${index+1}">${line}</div>`;
+            });
+            
+            logContentElement.innerHTML = formattedContent;
+        }
+        
+        // Toggle line wrap
+        $('#btnWrap').click(function() {
+            $('#logContent').toggleClass('wrapped');
+            
+            // Update button text
+            const isWrapped = $('#logContent').hasClass('wrapped');
+            $(this).html(isWrapped ? 
+                '<i class="bi bi-text-paragraph"></i> Disable Wrap' : 
+                '<i class="bi bi-text-wrap"></i> Enable Wrap');
+        });
+        
+        // Scroll to bottom
+        $('#btnScrollToBottom').click(function() {
+            const logContent = document.getElementById('logContent');
+            logContent.scrollTop = logContent.scrollHeight;
+        });
+        
+        // Scroll to top
+        $('#btnScrollToTop').click(function() {
+            document.getElementById('logContent').scrollTop = 0;
+        });
+        
+        // Copy to clipboard
+        $('#btnCopy').click(function() {
+            const logContent = document.getElementById('logContent').innerText;
+            navigator.clipboard.writeText(logContent).then(function() {
+                alert('Log content copied to clipboard!');
+            }).catch(function(err) {
+                console.error('Failed to copy: ', err);
+                alert('Failed to copy to clipboard. Please try again.');
+            });
+        });
+        
+        // Download log
+        $('#btnDownload').click(function() {
+            const filename = '{{ filename }}';
+            const logContent = document.getElementById('logContent').innerText;
+            
+            const element = document.createElement('a');
+            element.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(logContent));
+            element.setAttribute('download', filename);
+            element.style.display = 'none';
+            
+            document.body.appendChild(element);
+            element.click();
+            document.body.removeChild(element);
+        });
+        
+        // Show/hide search area
+        $('#btnSearch').click(function() {
+            $('#searchArea').toggle();
+            if ($('#searchArea').is(':visible')) {
+                $('#searchText').focus();
+            }
+        });
+        
+        // Search functionality variables
+        let searchResults = [];
+        let currentResultIndex = -1;
+        
+        // Search in log
+        $('#btnSearchText').click(function() {
+            performSearch();
+        });
+        
+        // Enter key for search
+        $('#searchText').keypress(function(e) {
+            if (e.which === 13) {
+                performSearch();
+            }
+        });
+        
+        // Clear search
+        $('#btnClearSearch').click(function() {
+            $('#searchText').val('');
+            clearSearch();
+        });
+        
+        // Navigate through results
+        $('#btnNextResult').click(function() {
+            if (searchResults.length > 0) {
+                navigateResults(1);
+            }
+        });
+        
+        $('#btnPrevResult').click(function() {
+            if (searchResults.length > 0) {
+                navigateResults(-1);
+            }
+        });
+        
+        // Function to perform search
+        function performSearch() {
+            const searchText = $('#searchText').val().trim();
+            if (!searchText) return;
+            
+            clearSearch();
+            
+            // Find all matches
+            const logContent = document.getElementById('logContent');
+            const logLines = logContent.querySelectorAll('.log-line');
+            
+            logLines.forEach((line, index) => {
+                const text = line.innerText;
+                if (text.toLowerCase().includes(searchText.toLowerCase())) {
+                    searchResults.push(line);
+                    
+                    // Highlight the matching text
+                    const regex = new RegExp(searchText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+                    line.innerHTML = line.innerHTML.replace(regex, '<span class="match-highlight">$&</span>');
+                }
+            });
+            
+            // Update results info
+            $('#resultCount').text(searchResults.length);
+            $('#searchResults').show();
+            
+            // Navigate to first result
+            if (searchResults.length > 0) {
+                navigateResults(1);
+            }
+        }
+        
+        // Function to navigate through results
+        function navigateResults(direction) {
+            // Remove current highlight
+            if (currentResultIndex >= 0 && currentResultIndex < searchResults.length) {
+                const currentMatches = searchResults[currentResultIndex].querySelectorAll('.match-highlight');
+                currentMatches.forEach(match => {
+                    match.classList.remove('current-match');
+                });
+            }
+            
+            // Update index
+            currentResultIndex += direction;
+            if (currentResultIndex >= searchResults.length) {
+                currentResultIndex = 0;
+            } else if (currentResultIndex < 0) {
+                currentResultIndex = searchResults.length - 1;
+            }
+            
+            // Highlight current match
+            const currentMatches = searchResults[currentResultIndex].querySelectorAll('.match-highlight');
+            currentMatches.forEach(match => {
+                match.classList.add('current-match');
+            });
+            
+            // Scroll to match
+            searchResults[currentResultIndex].scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+        
+        // Function to clear search highlights
+        function clearSearch() {
+            const logContent = document.getElementById('logContent');
+            const highlightedText = logContent.querySelectorAll('.match-highlight');
+            
+            highlightedText.forEach(element => {
+                const parent = element.parentNode;
+                parent.replaceChild(document.createTextNode(element.textContent), element);
+            });
+            
+            searchResults = [];
+            currentResultIndex = -1;
+            $('#searchResults').hide();
+        }
+    });
+</script>
+{% endblock %} 

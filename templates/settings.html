@@ -1,0 +1,423 @@
+{% extends "layout.html" %}
+
+{% block title %}Settings - Trading Bot{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-sm-flex align-items-center justify-content-between mb-4">
+        <h1 class="h3 mb-0 text-gray-800">Settings</h1>
+        <a href="{{ url_for('dashboard') }}" class="d-none d-sm-inline-block btn btn-sm btn-secondary shadow-sm">
+            <i class="bi bi-arrow-left"></i> Back to Dashboard
+        </a>
+    </div>
+
+    <div class="row">
+        <!-- IG API Settings -->
+        <div class="col-xl-6 col-lg-6 mb-4">
+            <div class="card shadow mb-4">
+                <div class="card-header py-3">
+                    <h6 class="m-0 font-weight-bold text-primary">IG API Settings</h6>
+                </div>
+                <div class="card-body">
+                    <form id="igSettingsForm">
+                        <div class="mb-3">
+                            <label for="igUsername" class="form-label">Username</label>
+                            <div class="input-group">
+                                <input type="text" class="form-control" id="igUsername" value="{{ ig_username }}" readonly>
+                                <button class="btn btn-outline-secondary" type="button" id="editUsername">
+                                    <i class="bi bi-pencil"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="igApiKey" class="form-label">API Key</label>
+                            <div class="input-group">
+                                <input type="password" class="form-control" id="igApiKey" value="{{ ig_api_key }}" readonly>
+                                <button class="btn btn-outline-secondary" type="button" id="editApiKey">
+                                    <i class="bi bi-pencil"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="mb-3 form-check">
+                            <input type="checkbox" class="form-check-input" id="igDemo" {% if ig_demo %}checked{% endif %}>
+                            <label class="form-check-label" for="igDemo">Use Demo Account</label>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">API Status</label>
+                            <div class="alert {% if ig_connected %}alert-success{% else %}alert-danger{% endif %}" role="alert" id="apiStatus">
+                                {% if ig_connected %}
+                                <i class="bi bi-check-circle"></i> Connected
+                                {% else %}
+                                <i class="bi bi-x-circle"></i> Disconnected
+                                {% endif %}
+                            </div>
+                        </div>
+                        <button type="button" class="btn btn-primary" id="testConnection">Test Connection</button>
+                        <button type="button" class="btn btn-success" id="saveIgSettings">Save Changes</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Webhook Settings -->
+        <div class="col-xl-6 col-lg-6 mb-4">
+            <div class="card shadow mb-4">
+                <div class="card-header py-3">
+                    <h6 class="m-0 font-weight-bold text-primary">Webhook Settings</h6>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label for="webhookUrl" class="form-label">Webhook URL</label>
+                        <div class="input-group">
+                            <input type="text" class="form-control" id="webhookUrl" value="{{ webhook_url }}" readonly>
+                            <button class="btn btn-outline-secondary" type="button" id="copyWebhook">
+                                <i class="bi bi-clipboard"></i>
+                            </button>
+                        </div>
+                        <small class="form-text text-muted">Use this URL in TradingView alerts.</small>
+                    </div>
+                    <div class="alert alert-info" role="alert">
+                        <h5><i class="bi bi-info-circle"></i> TradingView Webhook Setup</h5>
+                        <p>Configure your TradingView alerts to send a POST request to the webhook URL above with the following JSON payload:</p>
+                        <pre class="bg-light p-2 mt-2">
+{
+    "symbol": "MARKET:SYMBOL",
+    "direction": "BUY or SELL",
+    "price": "optional entry price",
+    "stop": "optional stop loss",
+    "limit": "optional take profit",
+    "size": "optional size in GBP",
+    "message": "alert message"
+}
+                        </pre>
+                    </div>
+                    <button type="button" class="btn btn-primary" id="testWebhook">
+                        <i class="bi bi-lightning-charge"></i> Test Webhook
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Ticker Data Settings -->
+    <div class="row">
+        <div class="col-12 mb-4">
+            <div class="card shadow mb-4">
+                <div class="card-header py-3 d-flex justify-content-between align-items-center">
+                    <h6 class="m-0 font-weight-bold text-primary">Ticker Data</h6>
+                    <div>
+                        <button class="btn btn-sm btn-primary" id="refreshTickerData">
+                            <i class="bi bi-arrow-repeat"></i> Refresh
+                        </button>
+                        <button class="btn btn-sm btn-success" id="uploadNewData">
+                            <i class="bi bi-upload"></i> Upload New Data
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3 alert alert-info">
+                        <strong>{{ ticker_count }}</strong> instruments loaded from ticker data file.
+                    </div>
+                    
+                    {% if ticker_data is defined and not ticker_data.empty %}
+                    <div class="table-responsive">
+                        <table class="table table-bordered table-hover table-sm" id="tickerTable" width="100%" cellspacing="0">
+                            <thead>
+                                <tr>
+                                    <th>Symbol</th>
+                                    <th>IG EPIC</th>
+                                    <th>ATR SL Period</th>
+                                    <th>ATR SL Multiple</th>
+                                    <th>ATR PT Period</th>
+                                    <th>ATR PT Multiple</th>
+                                    <th>Max Position Size</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for _, row in ticker_data.iterrows() %}
+                                <tr>
+                                    <td>{{ row['Symbol'] }}</td>
+                                    <td>{{ row['IG EPIC'] if row['IG EPIC'] != '?' else 'Not Set' }}</td>
+                                    <td>{{ row['ATR Stop Loss Period'] }}</td>
+                                    <td>{{ row['ATR Stop Loss Multiple'] }}</td>
+                                    <td>{{ row['ATR Profit Target Period'] }}</td>
+                                    <td>{{ row['ATR Profit Multiple'] }}</td>
+                                    <td>{{ row['Postion Size Max GBP'] }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="alert alert-warning">
+                        <i class="bi bi-exclamation-triangle"></i> No ticker data found. Please upload a CSV file with instrument data.
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Upload Modal -->
+<div class="modal fade" id="uploadModal" tabindex="-1" aria-labelledby="uploadModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="uploadModalLabel">Upload Ticker Data</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="uploadForm" enctype="multipart/form-data">
+                    <div class="mb-3">
+                        <label for="csvFile" class="form-label">CSV File</label>
+                        <input class="form-control" type="file" id="csvFile" accept=".csv">
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="uploadButton">Upload</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Field Modal -->
+<div class="modal fade" id="editFieldModal" tabindex="-1" aria-labelledby="editFieldModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="editFieldModalLabel">Edit Field</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label for="editFieldInput" class="form-label" id="editFieldLabel">Field Value</label>
+                    <input type="text" class="form-control" id="editFieldInput">
+                    <input type="hidden" id="editFieldType">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="saveFieldButton">Save</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Copy webhook URL to clipboard
+    document.getElementById('copyWebhook').addEventListener('click', function() {
+        var webhookUrl = document.getElementById('webhookUrl');
+        webhookUrl.select();
+        document.execCommand('copy');
+        alert('Webhook URL copied to clipboard!');
+    });
+    
+    // Test webhook button - redirect to test page
+    document.getElementById('testWebhook').addEventListener('click', function() {
+        window.location.href = "{{ url_for('test_webhook') }}";
+    });
+    
+    // Upload new data button
+    document.getElementById('uploadNewData').addEventListener('click', function() {
+        var uploadModal = new bootstrap.Modal(document.getElementById('uploadModal'));
+        uploadModal.show();
+    });
+    
+    // Refresh ticker data
+    document.getElementById('refreshTickerData').addEventListener('click', function() {
+        window.location.reload();
+    });
+    
+    // Initialize DataTable for ticker data
+    $(document).ready(function() {
+        var hasTable = document.getElementById('tickerTable');
+        if (hasTable) {
+            $('#tickerTable').DataTable({
+                pageLength: 25,
+                order: [[0, 'asc']]
+            });
+        }
+        
+        // Test IG API connection
+        $('#testConnection').click(function() {
+            // Show loading state
+            const button = $(this);
+            const originalText = button.html();
+            button.html('<i class="bi bi-hourglass-split"></i> Testing...');
+            button.prop('disabled', true);
+            
+            // Make API request
+            $.ajax({
+                url: '/api/test_connection',
+                type: 'GET',
+                success: function(response) {
+                    if (response.status === 'success') {
+                        $('#apiStatus').removeClass('alert-danger').addClass('alert-success');
+                        $('#apiStatus').html('<i class="bi bi-check-circle"></i> Connected');
+                        alert('API connection successful!');
+                    } else {
+                        $('#apiStatus').removeClass('alert-success').addClass('alert-danger');
+                        $('#apiStatus').html('<i class="bi bi-x-circle"></i> Disconnected');
+                        alert('API connection failed: ' + response.message);
+                    }
+                },
+                error: function(xhr, status, error) {
+                    $('#apiStatus').removeClass('alert-success').addClass('alert-danger');
+                    $('#apiStatus').html('<i class="bi bi-x-circle"></i> Disconnected');
+                    alert('API connection test failed. Please check the server logs.');
+                },
+                complete: function() {
+                    // Restore button state
+                    button.html(originalText);
+                    button.prop('disabled', false);
+                }
+            });
+        });
+        
+        // Edit Username Button
+        $('#editUsername').click(function() {
+            showEditFieldModal('Username', $('#igUsername').val(), 'username');
+        });
+        
+        // Edit API Key Button
+        $('#editApiKey').click(function() {
+            showEditFieldModal('API Key', $('#igApiKey').val(), 'apikey');
+        });
+        
+        // Toggle demo account
+        $('#igDemo').change(function() {
+            // Visual feedback that changes are pending
+            $('#saveIgSettings').addClass('btn-warning').removeClass('btn-success');
+            $('#saveIgSettings').html('<i class="bi bi-exclamation-triangle"></i> Save Changes*');
+        });
+        
+        // Save IG Settings
+        $('#saveIgSettings').click(function() {
+            // Prepare data
+            const data = {
+                username: $('#igUsername').val(),
+                api_key: $('#igApiKey').val(),
+                demo: $('#igDemo').is(':checked')
+            };
+            
+            // Show loading state
+            const button = $(this);
+            const originalText = button.html();
+            button.html('<i class="bi bi-hourglass-split"></i> Saving...');
+            button.prop('disabled', true);
+            
+            // Make API request
+            $.ajax({
+                url: '/api/save_settings',
+                type: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify(data),
+                success: function(response) {
+                    if (response.status === 'success') {
+                        alert('Settings saved successfully!');
+                        button.removeClass('btn-warning').addClass('btn-success');
+                        button.html('<i class="bi bi-check-circle"></i> Save Changes');
+                    } else {
+                        alert('Failed to save settings: ' + response.message);
+                    }
+                },
+                error: function(xhr, status, error) {
+                    alert('Error saving settings. Please check the server logs.');
+                },
+                complete: function() {
+                    // Restore button state
+                    button.prop('disabled', false);
+                }
+            });
+        });
+        
+        // Upload Button
+        $('#uploadButton').click(function() {
+            const fileInput = document.getElementById('csvFile');
+            if (!fileInput.files || fileInput.files.length === 0) {
+                alert('Please select a CSV file to upload');
+                return;
+            }
+            
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+            
+            // Show loading state
+            const button = $(this);
+            button.html('<i class="bi bi-hourglass-split"></i> Uploading...');
+            button.prop('disabled', true);
+            
+            // Make API request
+            $.ajax({
+                url: '/api/upload_ticker_data',
+                type: 'POST',
+                data: formData,
+                processData: false,
+                contentType: false,
+                success: function(response) {
+                    if (response.status === 'success') {
+                        alert('Ticker data uploaded successfully!');
+                        window.location.reload();
+                    } else {
+                        alert('Failed to upload ticker data: ' + response.message);
+                    }
+                },
+                error: function(xhr, status, error) {
+                    alert('Error uploading ticker data. Please check the server logs.');
+                },
+                complete: function() {
+                    // Restore button state
+                    button.html('Upload');
+                    button.prop('disabled', false);
+                    
+                    // Close modal
+                    $('#uploadModal').modal('hide');
+                }
+            });
+        });
+        
+        // Function to show edit field modal
+        function showEditFieldModal(fieldName, currentValue, fieldType) {
+            $('#editFieldLabel').text(`Edit ${fieldName}`);
+            $('#editFieldInput').val(currentValue);
+            $('#editFieldType').val(fieldType);
+            
+            // Set input type based on field type
+            if (fieldType === 'apikey') {
+                $('#editFieldInput').attr('type', 'password');
+            } else {
+                $('#editFieldInput').attr('type', 'text');
+            }
+            
+            // Show modal
+            const modal = new bootstrap.Modal(document.getElementById('editFieldModal'));
+            modal.show();
+        }
+        
+        // Save Field Button
+        $('#saveFieldButton').click(function() {
+            const fieldType = $('#editFieldType').val();
+            const fieldValue = $('#editFieldInput').val();
+            
+            // Update field value
+            if (fieldType === 'username') {
+                $('#igUsername').val(fieldValue);
+            } else if (fieldType === 'apikey') {
+                $('#igApiKey').val(fieldValue);
+            }
+            
+            // Visual feedback that changes are pending
+            $('#saveIgSettings').addClass('btn-warning').removeClass('btn-success');
+            $('#saveIgSettings').html('<i class="bi bi-exclamation-triangle"></i> Save Changes*');
+            
+            // Close modal
+            $('#editFieldModal').modal('hide');
+        });
+    });
+</script>
+{% endblock %} 

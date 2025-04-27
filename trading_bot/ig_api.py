@@ -1051,4 +1051,29 @@ class IGClient:
                 "direction": direction,
                 "size": size,
                 "order_type": "LIMIT" if market_status == "TRADEABLE" else "WORKING_ORDER"
-            } 
+            }
+    
+    def get_working_orders(self):
+        """
+        Get all working orders
+        
+        Returns:
+            dict: API response with working orders
+        """
+        if not self._ensure_session():
+            return {"workingOrders": []}
+        
+        url = f"{self.BASE_URL}/workingorders"
+        headers = self.headers.copy()
+        headers['Version'] = '2'
+        
+        try:
+            response = self.session.get(url, headers=headers)
+            if response.status_code == 200:
+                return response.json()
+            else:
+                logging.error(f"Failed to get working orders: {response.status_code} - {response.text}")
+                return {"workingOrders": []}
+        except Exception as e:
+            logging.error(f"Error getting working orders: {e}")
+            return {"workingOrders": []} 

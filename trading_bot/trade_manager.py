@@ -305,6 +305,9 @@ class TradeManager:
         # Check the status using the IG API
         status = self.ig_client.check_deal_status(deal_reference)
         
+        if status is None:
+            return {"status": "error", "message": f"Failed to retrieve status for deal reference {deal_reference}"}
+        
         if status.get('status') == 'NOT_FOUND':
             return {"status": "error", "message": f"No position found with deal reference {deal_reference}"}
         

@@ -1,0 +1,438 @@
+{% extends "layout.html" %}
+
+{% block title %}API Documentation - Trading Bot{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex align-items-center justify-content-between mb-4">
+        <h1 class="h3 mb-0 text-gray-800">API Documentation</h1>
+    </div>
+
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card shadow">
+                <div class="card-header py-3">
+                    <h6 class="m-0 font-weight-bold text-primary">Overview</h6>
+                </div>
+                <div class="card-body">
+                    <p>The Trading Bot API provides endpoints for interacting with the trading system, managing positions, checking market details, and more.</p>
+                    <p>Base URL: <code>https://{{ base_url|default('your-domain.com') }}</code></p>
+                    <p>All requests to the API endpoints return responses in JSON format.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- API Endpoints -->
+    <div class="row">
+        <div class="col-12">
+            <!-- Webhook Endpoint -->
+            <div class="card shadow mb-4 endpoint-card">
+                <div class="card-header py-3">
+                    <h6 class="m-0 font-weight-bold text-primary">
+                        <span class="badge bg-success me-2">POST</span> /webhook
+                    </h6>
+                </div>
+                <div class="card-body">
+                    <h5>Description</h5>
+                    <p>Processes webhook alerts from TradingView and executes trades based on the alert data.</p>
+                    
+                    <h5>Request Format</h5>
+                    <p>The webhook expects alerts in the following format:</p>
+                    <pre class="bg-light p-3"><code>TICKER DIRECTION OPENING_PRICE ATR1 ATR2 ATR3 ATR4 ATR5 ATR6 ATR7 ATR8 ATR9 ATR10</code></pre>
+                    
+                    <p>Example alert message:</p>
+                    <pre class="bg-light p-3"><code>BATS:PML UP 7.51 50.53 48.22 45.44 42.65 41.23 40.89 40.55 40.22 40.09 40.01</code></pre>
+                    
+                    <h5>Response</h5>
+                    <p>Returns a JSON object with the status of the trade execution.</p>
+                    
+                    <div class="mt-3">
+                        <button class="btn btn-sm btn-outline-primary btn-api" type="button" data-bs-toggle="collapse" data-bs-target="#webhook-example" aria-expanded="false">
+                            Example Response
+                        </button>
+                    </div>
+                    <div class="collapse mt-2" id="webhook-example">
+                        <div class="card card-body">
+<pre><code>{
+  "status": "success",
+  "message": "Trade executed successfully",
+  "trade_details": {
+    "epic": "KA.D.PML.DAILY.IP",
+    "direction": "SELL",
+    "entry_price": 7.66,
+    "size": 1.5,
+    "stop_level": 8.02,
+    "limit_level": 7.12,
+    "deal_reference": "ABCDEF123456"
+  }
+}</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Markets Endpoint -->
+            <div class="card shadow mb-4 endpoint-card">
+                <div class="card-header py-3">
+                    <h6 class="m-0 font-weight-bold text-primary">
+                        <span class="badge bg-primary me-2">GET</span> /markets
+                    </h6>
+                </div>
+                <div class="card-body">
+                    <h5>Description</h5>
+                    <p>Retrieves a list of available markets based on filtering criteria.</p>
+                    
+                    <h5>Parameters</h5>
+                    <table class="table table-bordered">
+                        <thead>
+                            <tr>
+                                <th>Parameter</th>
+                                <th>Type</th>
+                                <th>Required</th>
+                                <th>Description</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><code>type</code></td>
+                                <td>string</td>
+                                <td>No</td>
+                                <td>Filter by instrument type (e.g., "spreadbet", "cfd")</td>
+                            </tr>
+                            <tr>
+                                <td><code>search</code></td>
+                                <td>string</td>
+                                <td>No</td>
+                                <td>Search term to find specific markets</td>
+                            </tr>
+                            <tr>
+                                <td><code>max_results</code></td>
+                                <td>integer</td>
+                                <td>No</td>
+                                <td>Maximum number of results to return (default: 50)</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    
+                    <h5>Response</h5>
+                    <p>Returns a JSON object with a list of markets matching the specified criteria.</p>
+                    
+                    <div class="mt-3">
+                        <button class="btn btn-sm btn-outline-primary btn-api" type="button" data-bs-toggle="collapse" data-bs-target="#markets-example" aria-expanded="false">
+                            Example Response
+                        </button>
+                    </div>
+                    <div class="collapse mt-2" id="markets-example">
+                        <div class="card card-body">
+<pre><code>{
+  "status": "success",
+  "filter_type": "spreadbet",
+  "search_term": "none",
+  "count": 2,
+  "markets": [
+    {
+      "epic": "KA.D.PML.DAILY.IP",
+      "name": "Premier Miton Group PLC",
+      "symbol": "PML",
+      "instrumentType": "SHARES",
+      "expiry": "DFB",
+      "spreadbet_compatible": true
+    },
+    {
+      "epic": "KA.D.DNLM.DAILY.IP",
+      "name": "Dunelm Group PLC",
+      "symbol": "DNLM",
+      "instrumentType": "SHARES",
+      "expiry": "DFB",
+      "spreadbet_compatible": true
+    }
+  ]
+}</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Market Details Endpoint -->
+            <div class="card shadow mb-4 endpoint-card">
+                <div class="card-header py-3">
+                    <h6 class="m-0 font-weight-bold text-primary">
+                        <span class="badge bg-primary me-2">GET</span> /markets/{epic}
+                    </h6>
+                </div>
+                <div class="card-body">
+                    <h5>Description</h5>
+                    <p>Retrieves detailed information about a specific market identified by its EPIC code.</p>
+                    
+                    <h5>Parameters</h5>
+                    <table class="table table-bordered">
+                        <thead>
+                            <tr>
+                                <th>Parameter</th>
+                                <th>Type</th>
+                                <th>Required</th>
+                                <th>Description</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><code>epic</code></td>
+                                <td>string</td>
+                                <td>Yes</td>
+                                <td>The EPIC code of the market</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    
+                    <h5>Response</h5>
+                    <p>Returns a JSON object with detailed information about the specified market.</p>
+                    
+                    <div class="mt-3">
+                        <button class="btn btn-sm btn-outline-primary btn-api" type="button" data-bs-toggle="collapse" data-bs-target="#market-details-example" aria-expanded="false">
+                            Example Response
+                        </button>
+                    </div>
+                    <div class="collapse mt-2" id="market-details-example">
+                        <div class="card card-body">
+<pre><code>{
+  "status": "success",
+  "epic": "KA.D.DNLM.DAILY.IP",
+  "market_details": {
+    "prices": {
+      "bid": 1065.0,
+      "offer": 1066.0,
+      "current_price": 1065.5
+    },
+    "status": {
+      "market_status": "OPEN",
+      "tradeable": true
+    },
+    "instrument": {
+      "name": "Dunelm Group PLC",
+      "type": "SHARES",
+      "currency": "GBP",
+      "expiry": "DFB",
+      "epic": "KA.D.DNLM.DAILY.IP",
+      "lot_size": 1.0,
+      "contract_size": null,
+      "controlled_risk_allowed": true,
+      "streaming_prices_available": true,
+      "market_id": "DNLM"
+    },
+    "dealing_rules": {
+      "min_stop_distance": 1.0,
+      "min_stop_distance_unit": "POINTS",
+      "min_deal_size": 0.1,
+      "min_deal_size_unit": "POINTS",
+      "max_deal_size": null,
+      "max_deal_size_unit": null
+    }
+  }
+}</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Positions Endpoint -->
+            <div class="card shadow mb-4 endpoint-card">
+                <div class="card-header py-3">
+                    <h6 class="m-0 font-weight-bold text-primary">
+                        <span class="badge bg-primary me-2">GET</span> /positions
+                    </h6>
+                </div>
+                <div class="card-body">
+                    <h5>Description</h5>
+                    <p>Retrieves a list of all open positions.</p>
+                    
+                    <h5>Response</h5>
+                    <p>Returns a JSON object with a list of all open positions.</p>
+                    
+                    <div class="mt-3">
+                        <button class="btn btn-sm btn-outline-primary btn-api" type="button" data-bs-toggle="collapse" data-bs-target="#positions-example" aria-expanded="false">
+                            Example Response
+                        </button>
+                    </div>
+                    <div class="collapse mt-2" id="positions-example">
+                        <div class="card card-body">
+<pre><code>{
+  "status": "success",
+  "count": 2,
+  "positions": [
+    {
+      "position": {
+        "contractSize": 1.0,
+        "createdDate": "2023-04-22T10:15:30.000",
+        "dealId": "DEALABC123",
+        "dealReference": "REFABC123",
+        "direction": "BUY",
+        "limitLevel": 7.25,
+        "size": 1.5,
+        "stopLevel": 6.75,
+        "level": 7.0,
+        "currency": "GBP"
+      },
+      "market": {
+        "epic": "KA.D.PML.DAILY.IP",
+        "instrumentName": "Premier Miton Group PLC",
+        "expiry": "DFB",
+        "instrumentType": "SHARES"
+      }
+    },
+    {
+      "position": {
+        "contractSize": 1.0,
+        "createdDate": "2023-04-22T11:30:45.000",
+        "dealId": "DEALXYZ456",
+        "dealReference": "REFXYZ456",
+        "direction": "SELL",
+        "limitLevel": 1044.0,
+        "size": 0.5,
+        "stopLevel": 1086.0,
+        "level": 1065.0,
+        "currency": "GBP"
+      },
+      "market": {
+        "epic": "KA.D.DNLM.DAILY.IP",
+        "instrumentName": "Dunelm Group PLC",
+        "expiry": "DFB",
+        "instrumentType": "SHARES"
+      }
+    }
+  ]
+}</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- EPIC Lookup Endpoint -->
+            <div class="card shadow mb-4 endpoint-card">
+                <div class="card-header py-3">
+                    <h6 class="m-0 font-weight-bold text-primary">
+                        <span class="badge bg-primary me-2">GET</span> /epic/lookup
+                    </h6>
+                </div>
+                <div class="card-body">
+                    <h5>Description</h5>
+                    <p>Looks up the EPIC code for a given trading symbol.</p>
+                    
+                    <h5>Parameters</h5>
+                    <table class="table table-bordered">
+                        <thead>
+                            <tr>
+                                <th>Parameter</th>
+                                <th>Type</th>
+                                <th>Required</th>
+                                <th>Description</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><code>symbol</code></td>
+                                <td>string</td>
+                                <td>Yes</td>
+                                <td>The trading symbol to look up (e.g., "BATS:PML")</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    
+                    <h5>Response</h5>
+                    <p>Returns a JSON object with the EPIC code and additional details for the specified symbol.</p>
+                    
+                    <div class="mt-3">
+                        <button class="btn btn-sm btn-outline-primary btn-api" type="button" data-bs-toggle="collapse" data-bs-target="#epic-lookup-example" aria-expanded="false">
+                            Example Response
+                        </button>
+                    </div>
+                    <div class="collapse mt-2" id="epic-lookup-example">
+                        <div class="card card-body">
+<pre><code>{
+  "status": "success",
+  "symbol": "BATS:PML",
+  "epic": "KA.D.PML.DAILY.IP",
+  "source": "API",
+  "instrument_type": "SHARES",
+  "is_spreadbet": true,
+  "controlled_risk_allowed": true,
+  "epic_details": {
+    "name": "Premier Miton Group PLC",
+    "currency": "GBP",
+    "market_status": "OPEN",
+    "bid": 7.00,
+    "offer": 7.02,
+    "min_stop_distance": 1.0,
+    "min_limit_distance": 1.0
+  }
+}</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Additional Endpoints -->
+            <div class="card shadow mb-4">
+                <div class="card-header py-3">
+                    <h6 class="m-0 font-weight-bold text-primary">Additional Endpoints</h6>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-bordered">
+                            <thead>
+                                <tr>
+                                    <th>Method</th>
+                                    <th>Endpoint</th>
+                                    <th>Description</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><span class="badge bg-primary">GET</span></td>
+                                    <td><code>/position/status?reference={deal_reference}</code></td>
+                                    <td>Check the status of a position by deal reference</td>
+                                </tr>
+                                <tr>
+                                    <td><span class="badge bg-primary">GET</span></td>
+                                    <td><code>/position/status?ticker={ticker}</code></td>
+                                    <td>Check the status of a position by ticker symbol</td>
+                                </tr>
+                                <tr>
+                                    <td><span class="badge bg-primary">GET</span></td>
+                                    <td><code>/position/today</code></td>
+                                    <td>Get all trades made today</td>
+                                </tr>
+                                <tr>
+                                    <td><span class="badge bg-primary">GET</span></td>
+                                    <td><code>/history/transactions?days={days}&max_results={max_results}</code></td>
+                                    <td>Get transaction history with optional filtering</td>
+                                </tr>
+                                <tr>
+                                    <td><span class="badge bg-primary">GET</span></td>
+                                    <td><code>/history/activity?days={days}&max_results={max_results}</code></td>
+                                    <td>Get activity history with optional filtering</td>
+                                </tr>
+                                <tr>
+                                    <td><span class="badge bg-primary">GET</span></td>
+                                    <td><code>/history/all?days={days}&max_results={max_results}</code></td>
+                                    <td>Get comprehensive trading history with optional filtering</td>
+                                </tr>
+                                <tr>
+                                    <td><span class="badge bg-primary">GET</span></td>
+                                    <td><code>/health</code></td>
+                                    <td>Check the health status of the API</td>
+                                </tr>
+                                <tr>
+                                    <td><span class="badge bg-primary">GET</span></td>
+                                    <td><code>/test</code></td>
+                                    <td>Test endpoint to verify the bot is working</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 
