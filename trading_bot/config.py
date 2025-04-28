@@ -20,6 +20,7 @@ IG_ACCOUNT_TYPE = os.getenv("IG_ACCOUNT_TYPE", "DEMO")  # DEMO or LIVE
 MAX_OPEN_POSITIONS = 10
 ALERT_MAX_AGE_SECONDS = 5
 CSV_FILE_PATH = os.getenv("CSV_FILE_PATH", "ticker_data.csv")
+TICKER_DATA_FILE = CSV_FILE_PATH  # Alias for backward compatibility
 
 # Logging Configuration
 LOG_LEVEL = logging.INFO

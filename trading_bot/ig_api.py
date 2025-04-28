@@ -5,7 +5,9 @@ import logging
 import requests
 import json
 from datetime import datetime, timedelta
-from trading_bot.config import IG_USERNAME, IG_PASSWORD, IG_API_KEY, IG_ACCOUNT_TYPE
+from trading_bot.config import IG_USERNAME, IG_PASSWORD, IG_API_KEY, IG_ACCOUNT_TYPE, TICKER_DATA_FILE
+import os
+import pandas as pd
 
 logger = logging.getLogger(__name__)
 
@@ -685,93 +687,102 @@ class IGClient:
     
     def get_epic_from_symbol(self, symbol):
         """
-        Get the EPIC code for a given symbol
+        Get the EPIC code for a given symbol. First checks CSV file, then falls back to API search.
         
         Args:
-            symbol (str): The ticker symbol (e.g., BATS:PML)
+            symbol (str): The ticker symbol (e.g., ASX_DLY:IAG)
             
         Returns:
             str: EPIC code or None if not found
         """
-        # Extract exchange and ticker if in the format EXCHANGE:TICKER
+        if not symbol:
+            logger.error("Symbol cannot be empty")
+            return None
+
+        # First try to get EPIC from CSV file
+        try:
+            if os.path.exists(TICKER_DATA_FILE):
+                df = pd.read_csv(TICKER_DATA_FILE)
+                if 'Symbol' in df.columns and 'IG EPIC' in df.columns:
+                    # Find the row with matching symbol
+                    row = df[df['Symbol'] == symbol]
+                    if not row.empty:
+                        epic = row.iloc[0]['IG EPIC']
+                        # Check if EPIC is valid (not '?' or NaN)
+                        if pd.notna(epic) and epic != '?':
+                            logger.info(f"Found EPIC in CSV file: {epic} for {symbol}")
+                            return str(epic)
+                        else:
+                            logger.info(f"Found symbol in CSV but EPIC is not set: {symbol}")
+                    else:
+                        logger.info(f"Symbol not found in CSV: {symbol}")
+        except Exception as e:
+            logger.error(f"Error reading CSV file: {e}")
+
+        # If we get here, we need to search via API
+        logger.info(f"Falling back to API search for symbol: {symbol}")
+
+        # Exchange ve ticker'ı ayır
         parts = symbol.split(':')
-        search_term = parts[-1]  # Use the last part (the ticker)
-        
-        # Search for the market
-        markets = self.search_market(search_term)
-        
-        if not markets:
-            logger.error(f"No markets found for symbol: {symbol}")
+        if len(parts) != 2:
+            logger.error(f"Invalid symbol format: {symbol}. Expected format: EXCHANGE:TICKER")
             return None
         
-        # Log found markets for debugging
+        exchange, ticker = parts
+        
+        # Exchange prefix mapping - IG'nin kullandığı prefix'ler
+        exchange_prefixes = {
+            'ASX_DLY': ['AU.D.', 'IX.D.AU'],  # Avustralya
+            'LSE_DLY': ['IX.D.LS', 'UK.D.'],  # Londra
+            'BATS': ['CS.D.', 'US.D.'],       # BATS US
+            'TSX_DLY': ['CA.D.'],             # Toronto
+            'HKEX_DLY': ['HK.D.'],            # Hong Kong
+            'TSE_DLY': ['IX.D.JP', 'JP.D.'],  # Tokyo
+            'XETR_DLY': ['IX.D.DAX', 'DE.D.'] # Deutsche Börse
+        }
+        
+        # Get the expected prefixes for this exchange
+        expected_prefixes = exchange_prefixes.get(exchange, [])
+        if not expected_prefixes:
+            logger.error(f"Unsupported exchange: {exchange}")
+            return None
+        
+        # Search for the market
+        markets = self.search_market(ticker)
+        if not markets:
+            logger.error(f"No markets found for {ticker}")
+            return None
+        
+        # Log all found markets for debugging
         logger.info(f"Found {len(markets)} markets for {symbol}:")
-        for i, market in enumerate(markets):
-            epic = market.get('epic', '')
-            instrument_name = market.get('instrumentName', '')
-            market_id = market.get('marketId', '')
-            expiry = market.get('expiry', '')
-            instrument_type = market.get('instrumentType', '')
-            
-            logger.info(f"  {i+1}. EPIC: {epic}, Name: {instrument_name}, Market ID: {market_id}, Type: {instrument_type}, Expiry: {expiry}")
+        for market in markets:
+            logger.info(f"EPIC: {market.get('epic')}, Name: {market.get('instrumentName')}, Type: {market.get('instrumentType')}")
         
-        # SPREADBET hesapları için uygun EPIC kodlarını bulma önceliği
-        spreadbet_markets = []
+        # First try: Look for exact match with exchange prefix and DAILY.IP
+        for prefix in expected_prefixes:
+            for market in markets:
+                epic = market.get('epic', '')
+                if isinstance(epic, str) and epic.startswith(prefix) and epic.endswith('.DAILY.IP'):
+                    logger.info(f"Found exact match EPIC: {epic} (prefix: {prefix})")
+                    return epic
         
-        # Filter for potential spreadbet markets
+        # Second try: Look for any match with exchange prefix
+        for prefix in expected_prefixes:
+            for market in markets:
+                epic = market.get('epic', '')
+                if isinstance(epic, str) and epic.startswith(prefix):
+                    logger.info(f"Found exchange match EPIC: {epic} (prefix: {prefix})")
+                    return epic
+        
+        # Third try: Look for any DAILY.IP market that contains the ticker
         for market in markets:
             epic = market.get('epic', '')
-            # Genellikle spreadbet epic kodları CS.D.* veya IX.D.* ile başlar
-            # Ayrıca *DAILY.IP veya *CASH.IP ile biter
-            if (epic.startswith(('CS.D.', 'IX.D.', 'KA.D.', 'UA.D.', 'UD.D.', 'UK.D.', 'UP.D.'))
-                    or '.DAILY.IP' in epic 
-                    or '.CASH.IP' in epic):
-                spreadbet_markets.append(market)
+            if isinstance(epic, str) and epic.endswith('.DAILY.IP') and ticker.upper() in epic.upper():
+                logger.warning(f"Using partial match EPIC: {epic} - may not be correct exchange")
+                return epic
         
-        logger.info(f"Found {len(spreadbet_markets)} potential spreadbet markets for {symbol}")
-        
-        # Önce spreadbet marketlerde exchange eşleşmesi arama
-        if len(parts) > 1 and spreadbet_markets:
-            exchange = parts[0]
-            
-            # Try to find a spreadbet market with matching exchange
-            for market in spreadbet_markets:
-                market_name = market.get('instrumentName', '')
-                market_exchange = market.get('marketId', '').split('.')[0]
-                
-                if (exchange.lower() in market_exchange.lower() or 
-                    exchange.lower() in market_name.lower()):
-                    epic = market.get('epic')
-                    logger.info(f"Found spreadbet EPIC {epic} for {symbol} with exchange match")
-                    return epic
-        
-        # If we found any spreadbet markets, return the first one
-        if spreadbet_markets:
-            epic = spreadbet_markets[0].get('epic')
-            logger.info(f"Using spreadbet EPIC {epic} for {symbol} (first spreadbet match)")
-            return epic
-            
-        # Eğer exchange belirtildiyse, tüm marketlerde eşleşme arama
-        if len(parts) > 1:
-            exchange = parts[0]
-            
-            # Try to find a market with matching exchange
-            for market in markets:
-                market_name = market.get('instrumentName', '')
-                market_exchange = market.get('marketId', '').split('.')[0]
-                
-                if (exchange.lower() in market_exchange.lower() or 
-                    exchange.lower() in market_name.lower()):
-                    epic = market.get('epic')
-                    logger.warning(f"Found EPIC {epic} for {symbol} with exchange match, but it may not be spreadbet compatible")
-                    return epic
-        
-        # If we get here, just return the first result's EPIC with a warning
-        if markets:
-            epic = markets[0].get('epic')
-            logger.warning(f"Using EPIC {epic} for {symbol} (first match), but it may not be spreadbet compatible")
-            return epic
-        
+        # If nothing found, return None
+        logger.error(f"No suitable EPIC found for {symbol}")
         return None
     
     def _ensure_session(self):

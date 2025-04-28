@@ -1,0 +1,38 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>Test Webhook</h2>
+    
+    <div class="card">
+        <div class="card-body">
+            <form method="POST" action="{{ url_for('test_webhook') }}">
+                <div class="form-group">
+                    <label for="webhook_url">Webhook URL:</label>
+                    <input type="text" class="form-control" id="webhook_url" name="webhook_url" 
+                           value="{{ webhook_url }}" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="alert_data">Alert Data:</label>
+                    <textarea class="form-control" id="alert_data" name="alert_data" rows="5" 
+                              required>{{ alert_data }}</textarea>
+                </div>
+                
+                <button type="submit" class="btn btn-primary mt-3">Test Webhook</button>
+            </form>
+        </div>
+    </div>
+    
+    {% if response %}
+    <div class="card mt-4">
+        <div class="card-header">
+            Response
+        </div>
+        <div class="card-body">
+            <pre>{{ response }}</pre>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %} 

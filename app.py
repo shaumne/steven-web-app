@@ -15,6 +15,7 @@ from trading_bot.webhook_handler import WebhookHandler
 from trading_bot.config import load_ticker_data
 from trading_bot.auth import init_users_file, get_users, authenticate_user, login_required, admin_required
 from trading_bot.ig_api import IGClient
+import requests
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -1143,11 +1144,47 @@ def view_trade(reference):
     
     return render_template('view_trade.html', trade=trade_details, reference=reference)
 
-@app.route('/test/webhook')
+@app.route('/test/webhook', methods=['GET', 'POST'])
 @login_required
 def test_webhook():
-    """Test webhook functionality"""
-    return render_template('test_webhook.html')
+    """Test webhook endpoint with a form interface"""
+    if request.method == 'POST':
+        webhook_url = request.form.get('webhook_url', '')
+        alert_data = request.form.get('alert_data', '')
+        
+        # Send test webhook
+        try:
+            response = requests.post(
+                webhook_url,
+                json={"message": alert_data, "test_mode": True},
+                headers={"Content-Type": "application/json"}
+            )
+            
+            return render_template(
+                'test_webhook.html',
+                webhook_url=webhook_url,
+                alert_data=alert_data,
+                response=response.text
+            )
+            
+        except Exception as e:
+            flash(f"Error sending webhook: {str(e)}", "error")
+            return render_template(
+                'test_webhook.html',
+                webhook_url=webhook_url,
+                alert_data=alert_data,
+                response=str(e)
+            )
+    
+    # Default values for GET request
+    default_url = request.url_root + "webhook"
+    default_data = "ASX_DLY:IAG UP 8.05 0.08 0.101 0.121 0.139 0.153 0.163 0.17 0.175 0.178 0.181"
+    
+    return render_template(
+        'test_webhook.html',
+        webhook_url=default_url,
+        alert_data=default_data
+    )
 
 @app.route('/api/docs')
 @login_required

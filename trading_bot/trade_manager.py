@@ -93,37 +93,17 @@ class TradeManager:
         if ticker_row.empty:
             return {"status": "error", "message": f"Ticker {ticker} not found in configuration"}
         
-        # Check if we've already traded this ticker today
-        if ticker in self.today_trades:
-            return {"status": "error", "message": f"Already traded {ticker} today"}
-        
-        # Check if there's a dividend today
-        if is_dividend_date(ticker, self.ticker_data):
-            return {"status": "error", "message": f"Dividend date for {ticker} today, skipping trade"}
-        
-        # Check if we have too many open positions
-        open_positions = self.ig_client.get_open_positions()
-        if open_positions is None:
-            return {"status": "error", "message": "Failed to get open positions from IG Markets"}
-        
-        if len(open_positions) >= self.max_open_positions:
-            return {"status": "error", "message": f"Maximum open positions reached ({self.max_open_positions})"}
-        
-        # Get EPIC code for the ticker from API
+        # Get EPIC code for the ticker from CSV
         epic = self.get_epic(ticker)
         if not epic:
-            return {"status": "error", "message": f"No IG EPIC code found for {ticker}"}
-            
-        # Check if we already have an open position for this ticker
-        for position in open_positions:
-            if position.get('market', {}).get('epic') == epic:
-                return {"status": "error", "message": f"Already have an open position for {ticker}"}
+            return {"status": "error", "message": f"No IG EPIC code found for {ticker} in CSV"}
         
+        # Diğer kontrolleri devre dışı bırakıyoruz
         return None
     
     def get_epic(self, symbol):
         """
-        Get the EPIC code for a symbol, using cache if available
+        Get the EPIC code for a symbol from CSV data only
         
         Args:
             symbol (str): The ticker symbol
@@ -131,26 +111,15 @@ class TradeManager:
         Returns:
             str: The EPIC code or None if not found
         """
-        # Check if we have it in cache
-        if symbol in self.epic_cache:
-            return self.epic_cache[symbol]
-        
-        # Try to get from CSV first (for backward compatibility)
+        # Try to get from CSV
         ticker_row = self.ticker_data[self.ticker_data['Symbol'] == symbol]
         if not ticker_row.empty and ticker_row['IG EPIC'].values[0] != '?':
             epic = ticker_row['IG EPIC'].values[0]
             logger.info(f"Using EPIC {epic} for {symbol} from CSV")
-            self.epic_cache[symbol] = epic
             return epic
         
-        # Get from API if not available in CSV
-        epic = self.ig_client.get_epic_from_symbol(symbol)
-        
-        # Cache the result if found
-        if epic:
-            self.epic_cache[symbol] = epic
-            
-        return epic
+        logger.error(f"No EPIC found in CSV for {symbol}")
+        return None
     
     def _execute_trade(self, ticker, trade_params):
         """
@@ -172,111 +141,64 @@ class TradeManager:
             # Her zaman LIMIT emirleri kullanacağız - 7/24 çalışması için
             logger.info(f"LIMIT emri oluşturuluyor: {ticker} için {trade_params['direction']}")
             
-            # IG platformundan piyasa detaylarını al
+            # IG platformundan piyasa detaylarını al - sadece validasyon için
             market_details = self.ig_client._get_market_details(epic)
             if not market_details:
-                logger.error(f"Market details alınamadı, limit emri için fiyat belirlenemedi: {ticker}")
+                logger.error(f"Market details alınamadı: {ticker}")
                 return {"status": "error", "message": f"Failed to get market details for {ticker}"}
                 
             current_price = market_details.get('current_price', 0)
             market_status = market_details.get('market_status', 'CLOSED')
             
-            logger.info(f"Piyasa durumu: {market_status}, Fiyat: {current_price} için {ticker}")
+            logger.info(f"Piyasa durumu: {market_status}, Mevcut Fiyat: {current_price}, TradingView Fiyatı: {trade_params['entry_price']} için {ticker}")
             
-            # TradingView'dan gelen fiyat yerine GERÇEK piyasa fiyatına göre limit seviyesi ayarla
-            limit_level = None
+            # TradingView'dan gelen fiyatı kullan
+            limit_level = trade_params['entry_price']
             
-            # Yön ve piyasa durumuna göre uygun seviyeyi belirle
-            if trade_params['direction'] == 'BUY':
-                # Alış için, mevcut fiyattan birazcık aşağıda bir limit emri ver
-                limit_level = current_price * 0.99  # %1 altında
-                logger.info(f"BUY emri için limit seviyesi: {limit_level} (mevcut fiyat: {current_price})")
-            else:  # SELL
-                # Satış için, mevcut fiyattan birazcık yukarıda bir limit emri ver
-                limit_level = current_price * 1.01  # %1 üstünde
-                logger.info(f"SELL emri için limit seviyesi: {limit_level} (mevcut fiyat: {current_price})")
-                
             # Limit fiyatını ondalık basamağı düzenle
-            limit_level = round(limit_level, 2)  # 2 ondalık basamağa yuvarla
-            logger.info(f"Ayarlanmış limit seviyesi: {limit_level} için {ticker}")
+            limit_level = round(limit_level, 4)  # 4 ondalık basamağa yuvarla
             
-            # Orjinal trade parametrelerini sakla ancak entry_price bilgisini güncelle
-            original_entry_price = trade_params.get('entry_price')
-            logger.info(f"Orijinal TradingView fiyatı: {original_entry_price}, Gerçek piyasa fiyatı: {current_price}")
-            
-            # IG API'ye LIMIT emri gönder
+            # Pozisyon oluştur
             result = self.ig_client.create_position(
                 epic=epic,
                 direction=trade_params['direction'],
                 size=trade_params['position_size'],
+                limit_level=limit_level,
                 limit_distance=trade_params['limit_distance'],
                 stop_distance=trade_params['stop_distance'],
-                use_limit_order=True,  # Her zaman LIMIT emri kullan
-                limit_level=limit_level
+                use_limit_order=True
             )
             
-            if not result:
-                logger.error(f"LIMIT emri oluşturulamadı: {ticker}")
-                return {"status": "error", "message": f"Failed to create limit order for {ticker}"}
-            
-            # API yanıtını loglayalım daha detaylı
-            logger.info(f"API yanıtı: {json.dumps(result)}")
-            
-            # API yanıtında deal_reference var mı kontrol edelim
-            deal_reference = result.get('deal_reference')
-            deal_id = result.get('deal_id')
-            
-            # Record the trade for today
-            self.today_trades[ticker] = {
-                "time": datetime.now(),
-                "params": trade_params,
-                "result": result,
-                "epic": epic,  # Store the EPIC code for reference
-                "deal_reference": deal_reference,
-                "deal_id": deal_id,
-                "original_entry_price": original_entry_price,
-                "adjusted_limit_level": limit_level,
-                "market_price": current_price
-            }
-            
-            # Log success information
-            if deal_reference:
-                logger.info(f"LIMIT emri başarıyla oluşturuldu: {ticker}, Deal Reference: {deal_reference}")
-            elif deal_id:
-                logger.info(f"LIMIT emri başarıyla oluşturuldu: {ticker}, Deal ID: {deal_id}")
+            if result.get('status') == 'success':
+                # İşlem başarılı - günlük işlem takibine ekle
+                self.today_trades[ticker] = {
+                    "time": datetime.now(),
+                    "params": trade_params,
+                    "epic": epic,
+                    "deal_reference": result.get('deal_reference')
+                }
+                
+                # Başarılı sonucu döndür
+                return {
+                    "status": "success",
+                    "message": f"LIMIT order created for {ticker}",
+                    "deal_reference": result.get('deal_reference'),
+                    "epic": epic,
+                    "direction": trade_params['direction'],
+                    "entry_price": limit_level,
+                    "size": trade_params['position_size'],
+                    "stop_distance": trade_params['stop_distance'],
+                    "limit_distance": trade_params['limit_distance'],
+                    "order_type": "LIMIT"
+                }
             else:
-                logger.warning(f"LIMIT emri oluşturuldu ancak deal_reference veya deal_id alınamadı: {ticker}")
-            
-            response = {
-                "status": "success",
-                "message": f"LIMIT order created for {ticker}",
-                "order_type": "LIMIT",
-                "direction": trade_params['direction'],
-                "size": trade_params['position_size'],
-                "entry_price": trade_params['entry_price'],
-                "stop_distance": trade_params['stop_distance'],
-                "limit_distance": trade_params['limit_distance'],
-                "epic": epic
-            }
-            
-            # Eğer deal bilgisi gelirse ekleyelim
-            if deal_reference:
-                response["deal_reference"] = deal_reference
-            if deal_id:
-                response["deal_id"] = deal_id
-                
-            # API yanıtının konfirmasyon kısmı varsa ekleyelim
-            if 'confirmation' in result:
-                response['confirmation'] = result['confirmation']
-                
-            # Eğer deal_status bilgisi varsa ekleyelim
-            if 'deal_status' in result:
-                response['deal_status'] = result['deal_status']
-                
-            return response
+                return {
+                    "status": "error",
+                    "message": f"Failed to create order: {result.get('reason', 'Unknown error')}"
+                }
             
         except Exception as e:
-            logger.error(f"Error executing trade for {ticker}: {e}")
+            logger.error(f"Error executing trade: {e}")
             return {"status": "error", "message": f"Error executing trade: {str(e)}"}
     
     def check_position_status(self, deal_reference=None, ticker=None):

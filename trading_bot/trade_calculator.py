@@ -53,16 +53,12 @@ class TradeCalculator:
             # Get multipliers
             atr_sl_multiple = float(ticker_row['ATR Stop Loss Multiple'].values[0])
             atr_tp_multiple = float(ticker_row['ATR Profit Multiple'].values[0])
-            opening_price_multiple = float(ticker_row['Opening Price Multiple'].values[0]) / 100.0
             
             # Get max position size
             max_position_size_gbp = float(ticker_row['Postion Size Max GBP'].values[0])
             
-            # Calculate entry price
-            if trade_direction == "BUY":
-                entry_price = opening_price / opening_price_multiple
-            else:  # SELL
-                entry_price = opening_price * opening_price_multiple
+            # Use exact price from TradingView
+            entry_price = opening_price
             
             # Check if atr_values has enough elements
             if len(atr_values) < max(atr_sl_period, atr_tp_period):
@@ -77,10 +73,18 @@ class TradeCalculator:
             stop_distance = atr_sl * atr_sl_multiple / 100
             limit_distance = atr_tp * atr_tp_multiple / 100
             
-            # Calculate position size (number of contracts)
-            # This is a simplified calculation, in real trading you might 
-            # want to calculate this based on risk percentage
-            position_size = round(max_position_size_gbp / entry_price, 2)
+            # Calculate position size with minimum size consideration
+            # IG minimum size is usually 1.0 for most instruments
+            base_size = max_position_size_gbp / entry_price
+            
+            # Eğer fiyat 100'den büyükse, minimum 1.0 olacak şekilde yuvarla
+            if entry_price > 100:
+                position_size = max(1.0, round(base_size, 1))
+            else:
+                # Düşük fiyatlı hisseler için daha hassas hesaplama
+                position_size = round(base_size, 2)
+            
+            logger.info(f"Trade parameters for {ticker}: Entry Price: {entry_price}, Position Size: {position_size}")
             
             # Return the trade parameters
             return {
