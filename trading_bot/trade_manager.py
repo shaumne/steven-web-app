@@ -58,14 +58,25 @@ class TradeManager:
         
         ticker, direction, opening_price, atr_values = parse_result
         
-        # Perform pre-trade validations
-        validation_result = self._validate_trade(ticker)
-        if validation_result:
-            return validation_result
+        # Get EPIC code for the ticker from CSV
+        epic = self.get_epic(ticker)
+        if not epic:
+            return {"status": "error", "message": f"No IG EPIC code found for {ticker} in CSV"}
         
-        # Calculate trade parameters
+        # Get current IG price for normalization
+        market_details = self.ig_client._get_market_details(epic)
+        if not market_details:
+            return {"status": "error", "message": f"Failed to get market details for {ticker}"}
+        
+        current_price = market_details.get('current_price', 0)
+        if not current_price:
+            return {"status": "error", "message": f"Failed to get current price for {ticker}"}
+        
+        logger.info(f"Processing alert for {ticker}: TV Price={opening_price}, IG Price={current_price}")
+        
+        # Calculate trade parameters with price normalization
         trade_params = self.trade_calculator.calculate_trade_parameters(
-            ticker, direction, opening_price, atr_values
+            ticker, direction, opening_price, atr_values, ig_price=current_price
         )
         
         if not trade_params:
