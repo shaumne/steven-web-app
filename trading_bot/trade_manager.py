@@ -152,7 +152,7 @@ class TradeManager:
             # Her zaman LIMIT emirleri kullanacağız - 7/24 çalışması için
             logger.info(f"LIMIT emri oluşturuluyor: {ticker} için {trade_params['direction']}")
             
-            # IG platformundan piyasa detaylarını al - sadece validasyon için
+            # IG platformundan piyasa detaylarını al - sadece loglama için
             market_details = self.ig_client._get_market_details(epic)
             if not market_details:
                 logger.error(f"Market details alınamadı: {ticker}")
@@ -161,13 +161,21 @@ class TradeManager:
             current_price = market_details.get('current_price', 0)
             market_status = market_details.get('market_status', 'CLOSED')
             
-            logger.info(f"Piyasa durumu: {market_status}, Mevcut Fiyat: {current_price}, TradingView Fiyatı: {trade_params['entry_price']} için {ticker}")
+            # TradingView'dan gelen orijinal fiyatı kullan
+            original_price = trade_params['original_price']
             
-            # TradingView'dan gelen fiyatı kullan
-            limit_level = trade_params['entry_price']
+            # CRITICAL: TradingView'den gelen orijinal fiyatı doğrudan kullanıyoruz!
+            # Bu fiyat API'den gelen normalize edilmiş fiyat değil, TV'den gelen fiyat
+            limit_level = original_price
             
-            # Limit fiyatını ondalık basamağı düzenle
-            limit_level = round(limit_level, 4)  # 4 ondalık basamağa yuvarla
+            # Limit fiyatını düzgün formatta tut (maks 4 decimal)
+            limit_level = round(limit_level, 4)
+            
+            logger.info(f"İşlem detayları:")
+            logger.info(f"Piyasa durumu: {market_status}, IG Fiyatı: {current_price}")
+            logger.info(f"TradingView fiyatı: {original_price}, Kullanılan Limit Seviyesi: {limit_level}")
+            logger.info(f"Yön: {trade_params['direction']}, Boyut: {trade_params['position_size']}")
+            logger.info(f"Stop Distance: {trade_params['stop_distance']}, Limit Distance: {trade_params['limit_distance']}")
             
             # Pozisyon oluştur
             result = self.ig_client.create_position(
@@ -179,6 +187,9 @@ class TradeManager:
                 stop_distance=trade_params['stop_distance'],
                 use_limit_order=True
             )
+            
+            # API yanıtını detaylı şekilde logla
+            logger.info(f"IG API yanıtı: {json.dumps(result)}")
             
             if result.get('status') == 'success':
                 # İşlem başarılı - günlük işlem takibine ekle
@@ -197,15 +208,42 @@ class TradeManager:
                     "epic": epic,
                     "direction": trade_params['direction'],
                     "entry_price": limit_level,
+                    "original_price": original_price,
+                    "current_ig_price": current_price,
                     "size": trade_params['position_size'],
                     "stop_distance": trade_params['stop_distance'],
                     "limit_distance": trade_params['limit_distance'],
                     "order_type": "LIMIT"
                 }
             else:
+                # Hata detaylarını zenginleştir
+                error_code = result.get('error_code', 'UNKNOWN')
+                error_reason = result.get('reason', 'Unknown error')
+                
+                # Bazı yaygın hata kodları için daha anlaşılır mesajlar ekle
+                error_details = ""
+                if "ATTACHED_ORDER_LEVEL_ERROR" in error_reason:
+                    error_details = "ATTACHED_ORDER_LEVEL_ERROR: Stop veya limit seviyeleri uygun değil. Değerler çok yakın olabilir."
+                elif "INSTRUMENT_NOT_TRADEABLE" in error_reason:
+                    error_details = "INSTRUMENT_NOT_TRADEABLE: Enstrüman şu anda işleme kapalı veya ticaret dışı olabilir."
+                elif "MARKET_CLOSED" in error_reason:
+                    error_details = "MARKET_CLOSED: Piyasa kapalı durumda."
+                elif "INSUFFICIENT_FUNDS" in error_reason:
+                    error_details = "INSUFFICIENT_FUNDS: Hesapta yeterli bakiye yok."
+                elif "POSITION_ALREADY_EXISTS_IN_OPPOSITE_DIRECTION" in error_reason:
+                    error_details = "Karşıt yönde bir pozisyon zaten mevcut."
+                
                 return {
                     "status": "error",
-                    "message": f"Failed to create order: {result.get('reason', 'Unknown error')}"
+                    "message": f"Failed to create order: {error_reason}",
+                    "error_code": error_code,
+                    "error_details": error_details,
+                    "ticker": ticker,
+                    "epic": epic,
+                    "direction": trade_params['direction'],
+                    "entry_price": limit_level,
+                    "original_price": original_price,
+                    "current_ig_price": current_price
                 }
             
         except Exception as e:

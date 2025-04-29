@@ -97,39 +97,73 @@ class TradeCalculator:
             # Get max position size
             max_position_size_gbp = float(ticker_row['Postion Size Max GBP'].values[0])
             
-            # Normalize price if IG price is provided
+            # Her zaman orijinal fiyatı sakla
+            original_price = opening_price
+            
+            # Normalize price if IG price is provided (API için kullanılacak)
             entry_price = opening_price
             if ig_price is not None:
                 entry_price = self.normalize_price(opening_price, ig_price)
+                logger.info(f"Normalized entry price from {opening_price} to {entry_price}")
             
             # Check if atr_values has enough elements
             if len(atr_values) < max(atr_sl_period, atr_tp_period):
-                logger.error(f"Not enough ATR values provided for {ticker}")
-                return None
+                logger.error(f"Not enough ATR values provided for {ticker}. Need {max(atr_sl_period, atr_tp_period)}, got {len(atr_values)}")
+                # Eğer yeterli ATR değeri yoksa, varsayılan değerler kullan
+                logger.warning(f"Using default ATR values due to insufficient data")
+                atr_sl = 0.01 * original_price  # Fiyatın %1'i
+                atr_tp = 0.02 * original_price  # Fiyatın %2'si
+            else:
+                # Get the relevant ATR values - ATR'leri normalize etmiyoruz
+                atr_sl = atr_values[atr_sl_period - 1]  # 0-indexed list
+                atr_tp = atr_values[atr_tp_period - 1]  # 0-indexed list
             
-            # Get the relevant ATR values and normalize them too if needed
-            atr_sl = atr_values[atr_sl_period - 1]  # 0-indexed list
-            atr_tp = atr_values[atr_tp_period - 1]  # 0-indexed list
+            # ATR değerlerinin sıfır olması durumunu kontrol et
+            if atr_sl <= 0:
+                logger.warning(f"ATR Stop Loss value is zero or negative: {atr_sl}. Using default 1% of price.")
+                atr_sl = 0.01 * original_price
             
-            if ig_price is not None:
-                # ATR değerlerini de normalize et
-                atr_sl = self.normalize_price(atr_sl, ig_price)
-                atr_tp = self.normalize_price(atr_tp, ig_price)
+            if atr_tp <= 0:
+                logger.warning(f"ATR Take Profit value is zero or negative: {atr_tp}. Using default 2% of price.")
+                atr_tp = 0.02 * original_price
             
             # Calculate stop loss and take profit distances in points
-            stop_distance = atr_sl * atr_sl_multiple / 100
-            limit_distance = atr_tp * atr_tp_multiple / 100
+            stop_distance = atr_sl * atr_sl_multiple
+            limit_distance = atr_tp * atr_tp_multiple
             
-            # Calculate position size (number of contracts)
-            position_size = max(1.0, round(max_position_size_gbp / entry_price, 2))
+            # Stop ve limit mesafesi minimum değer kontrolü
+            MIN_DISTANCE = 0.001 * original_price  # Fiyatın en az %0.1'i
+            if stop_distance < MIN_DISTANCE:
+                logger.warning(f"Stop distance {stop_distance} is too small. Setting to minimum {MIN_DISTANCE}")
+                stop_distance = MIN_DISTANCE
+                
+            if limit_distance < MIN_DISTANCE:
+                logger.warning(f"Limit distance {limit_distance} is too small. Setting to minimum {MIN_DISTANCE}")
+                limit_distance = MIN_DISTANCE
             
-            logger.info(f"Trade parameters for {ticker}: Entry Price: {entry_price}, Position Size: {position_size}")
+            # Calculate position size based on ORIGINAL price (not normalized price)
+            position_size = max(1.0, round(max_position_size_gbp / original_price, 2))
+            
+            # Pozisyon büyüklüğünü sınırla - çok büyük emirler reddedilebilir
+            MAX_SAFE_POSITION_SIZE = 40.0
+            if position_size > MAX_SAFE_POSITION_SIZE:
+                logger.warning(f"Position size {position_size} is too large. Limiting to {MAX_SAFE_POSITION_SIZE}")
+                position_size = MAX_SAFE_POSITION_SIZE
+            
+            # Log all parameters for easier debugging
+            logger.info(f"Trade parameters for {ticker}:")
+            logger.info(f"Original TV Price: {original_price}, Entry Price: {entry_price}")
+            logger.info(f"Position Size: {position_size} (calculated using original price: {original_price})")
+            logger.info(f"Stop Distance: {stop_distance}")
+            logger.info(f"Limit Distance: {limit_distance}")
+            logger.info(f"ATR Values - Stop: {atr_sl}, Take Profit: {atr_tp}")
             
             # Return the trade parameters
             return {
                 'ticker': ticker,
                 'direction': trade_direction,
-                'entry_price': round(entry_price, 4),
+                'original_price': round(original_price, 4),  # TradingView'dan gelen orijinal fiyat
+                'entry_price': round(entry_price, 4),        # Normalize edilmiş fiyat
                 'stop_distance': round(stop_distance, 4),
                 'limit_distance': round(limit_distance, 4),
                 'position_size': position_size,
