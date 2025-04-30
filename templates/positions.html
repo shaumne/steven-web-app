@@ -6,9 +6,21 @@
 <div class="container-fluid">
     <div class="d-sm-flex align-items-center justify-content-between mb-4">
         <h1 class="h3 mb-0 text-gray-800">Positions & Orders</h1>
-        <a href="{{ url_for('dashboard') }}" class="d-none d-sm-inline-block btn btn-sm btn-secondary shadow-sm">
-            <i class="bi bi-arrow-left"></i> Back to Dashboard
-        </a>
+        <div class="d-flex">
+            <div class="dropdown me-2">
+                <button class="btn btn-sm btn-info dropdown-toggle shadow-sm" id="exportButton" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                    <i class="bi bi-file-earmark-spreadsheet"></i> Export History
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="exportButton">
+                    <li><a class="dropdown-item" href="{{ url_for('download_activity_history_csv', days=7) }}">Last 7 Days</a></li>
+                    <li><a class="dropdown-item" href="{{ url_for('download_activity_history_csv', days=14) }}">Last 14 Days</a></li>
+                    <li><a class="dropdown-item" href="{{ url_for('download_activity_history_csv', days=30) }}">Last 30 Days</a></li>
+                </ul>
+            </div>
+            <a href="{{ url_for('dashboard') }}" class="d-none d-sm-inline-block btn btn-sm btn-secondary shadow-sm">
+                <i class="bi bi-arrow-left"></i> Back to Dashboard
+            </a>
+        </div>
     </div>
 
     <!-- Open Positions -->

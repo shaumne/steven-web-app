@@ -1519,6 +1519,204 @@ def cancel_order(deal_id):
             "message": f"Error cancelling working order: {str(e)}"
         }), 500
 
+@app.route('/history/activity/csv', methods=['GET'])
+@login_required
+def download_activity_history_csv():
+    """Get activity history in CSV format for download"""
+    try:
+        # Get query parameters
+        days = request.args.get('days', default=7, type=int)
+        max_results = request.args.get('max_results', default=100, type=int)
+        
+        # pageSize değerini sınırla - IG API 1000 değerini kabul etmiyor
+        if max_results > 100:
+            max_results = 100
+            
+        # Get IG client from webhook handler
+        ig_client = webhook_handler.trade_manager.ig_client
+        
+        # Ensure we have a valid session
+        if not ig_client._ensure_session():
+            flash('IG oturumu açılamadı. Lütfen tekrar deneyin.', 'danger')
+            return redirect(url_for('dashboard'))
+        
+        # Set default dates if not provided
+        to_date = datetime.datetime.now()
+        from_date = to_date - datetime.timedelta(days=days)
+        
+        # Format dates for API
+        from_date_str = from_date.strftime("%Y-%m-%d")
+        to_date_str = to_date.strftime("%Y-%m-%d")
+        
+        # Get activity history directly from IG API
+        url = f"{ig_client.BASE_URL}/history/activity"
+        headers = ig_client.headers.copy()
+        headers['Version'] = '3'
+        
+        params = {
+            'from': from_date_str,
+            'to': to_date_str,
+            'pageSize': str(max_results),  # IG API string olarak bekliyor
+            'detailed': 'true'  # IG API string olarak bekliyor
+        }
+        
+        # Make the API request
+        response = ig_client.session.get(url, params=params, headers=headers)
+        
+        if response.status_code != 200:
+            flash(f'IG API hatası: {response.status_code}', 'danger')
+            return redirect(url_for('dashboard'))
+        
+        # Parse the JSON response
+        activities_data = response.json()
+        activities = activities_data.get('activities', [])
+        
+        if not activities:
+            flash('Belirtilen tarih aralığında işlem bulunamadı.', 'warning')
+            return redirect(url_for('dashboard'))
+        
+        # Create a DataFrame from the activities
+        activity_rows = []
+        for activity in activities:
+            # Extract fields from the activity object
+            details = activity.get('details', {})
+            row = {
+                "TextEpic": details.get('epic', ''),
+                "DealId": details.get('dealId', ''),
+                "ActivityHistoryId": activity.get('dealId', ''),
+                "Date": activity.get('date', '').split('T')[0].replace('-', '/'),
+                "Time": activity.get('date', '').split('T')[1][:5] if 'T' in activity.get('date', '') else '',
+                "ActivityType": activity.get('type', ''),
+                "MarketName": details.get('marketName', ''),
+                "Period": details.get('period', 'DFB'),
+                "Result": f"{activity.get('status', '')}: {activity.get('reason', '')}",
+                "Channel": details.get('channel', 'API'),
+                "Currency": details.get('currency', '#.'),
+                "Size": f"{'+' if details.get('direction', '') == 'BUY' else '-'}{details.get('size', '')}",
+                "Level": details.get('level', ''),
+                "Stop": details.get('stopLevel', ''),
+                "StopType": 'N',
+                "Limit": details.get('limitLevel', ''),
+                "ActionStatus": activity.get('status', 'ACCEPT'),
+                "Order Stop Level": '-'
+            }
+            activity_rows.append(row)
+        
+        # Create the CSV file
+        df = pd.DataFrame(activity_rows)
+        
+        # Prepare the file name with date range
+        account_id = session.get('user', {}).get('username', 'user')
+        file_name = f"ActivityHistory-{account_id}-({from_date.strftime('%d-%m-%Y')})-({to_date.strftime('%d-%m-%Y')}).csv"
+        
+        # Create a temporary file to store the CSV
+        temp_file_path = f"temp_{file_name}"
+        df.to_csv(temp_file_path, index=False)
+        
+        # Return the CSV file
+        return_data = send_file(
+            temp_file_path,
+            mimetype='text/csv',
+            as_attachment=True,
+            download_name=file_name
+        )
+        
+        # Schedule the temp file for deletion (after response is sent)
+        @return_data.call_on_close
+        def delete_temp_file():
+            if os.path.exists(temp_file_path):
+                try:
+                    os.remove(temp_file_path)
+                except:
+                    pass
+        
+        return return_data
+        
+    except Exception as e:
+        logging.error(f"CSV indirme hatası: {e}")
+        flash(f'CSV indirme sırasında hata oluştu: {str(e)}', 'danger')
+        return redirect(url_for('dashboard'))
+
+@app.route('/api/history/activity', methods=['GET'])
+def api_activity_history():
+    """API endpoint for activity history in JSON format"""
+    try:
+        # Get query parameters
+        days = request.args.get('days', default=7, type=int)
+        max_results = request.args.get('max_results', default=100, type=int)
+        
+        # pageSize değerini sınırla - IG API 1000 değerini kabul etmiyor
+        if max_results > 100:
+            max_results = 100
+            
+        # Set default dates if not provided
+        to_date = datetime.datetime.now()
+        from_date = to_date - datetime.timedelta(days=days)
+        
+        # Format dates for API - IG API expects format: YYYY-MM-DD
+        from_date_str = from_date.strftime("%Y-%m-%d")
+        to_date_str = to_date.strftime("%Y-%m-%d")
+        
+        # Get IG client from webhook handler
+        ig_client = webhook_handler.trade_manager.ig_client
+        
+        # Ensure we have a valid session
+        if not ig_client._ensure_session():
+            return jsonify({
+                "status": "error",
+                "message": "Failed to authenticate with IG API"
+            }), 401
+        
+        # Get activity history directly from IG API
+        url = f"{ig_client.BASE_URL}/history/activity"
+        headers = ig_client.headers.copy()
+        headers['Version'] = '3'
+        
+        # IG API parametrelerini doğru formatta hazırla
+        params = {
+            'from': from_date_str,
+            'to': to_date_str,
+            'pageSize': str(max_results),  # IG API string olarak bekliyor
+            'detailed': 'true'  # IG API string olarak bekliyor
+        }
+        
+        # API isteğini yap
+        logging.info(f"Getting activity history from IG API: {url} with params: {params}")
+        response = ig_client.session.get(url, params=params, headers=headers)
+        
+        if response.status_code != 200:
+            error_message = f"IG API error: {response.status_code}"
+            try:
+                error_json = response.json()
+                if 'errorCode' in error_json:
+                    error_message += f" - {error_json['errorCode']}"
+            except:
+                pass
+                
+            logging.error(f"Error from IG API: {error_message}, Response: {response.text}")
+            
+            return jsonify({
+                "status": "error",
+                "message": error_message
+            }), response.status_code
+        
+        # Parse the JSON response
+        activities_data = response.json()
+        
+        return jsonify({
+            "status": "success",
+            "from_date": from_date_str,
+            "to_date": to_date_str,
+            "data": activities_data
+        })
+        
+    except Exception as e:
+        logging.error(f"Error fetching activity history: {e}")
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=True) 

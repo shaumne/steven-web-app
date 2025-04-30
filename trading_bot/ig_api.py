@@ -215,6 +215,11 @@ class IGClient:
         if not self._ensure_session():
             return None
         
+        # IG API pageSize için 100'den büyük değerleri kabul etmiyor
+        if max_results > 100:
+            max_results = 100
+            logger.info(f"Limiting pageSize to maximum allowed value: 100")
+            
         # Set default dates if not provided
         if from_date is None:
             from_date = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
@@ -229,7 +234,7 @@ class IGClient:
             'type': 'ALL',
             'from': from_date,
             'to': to_date,
-            'pageSize': max_results
+            'pageSize': str(max_results)
         }
         
         try:
@@ -265,6 +270,11 @@ class IGClient:
         if not self._ensure_session():
             return None
         
+        # IG API pageSize için 100'den büyük değerleri kabul etmiyor
+        if max_results > 100:
+            max_results = 100
+            logger.info(f"Limiting pageSize to maximum allowed value: 100")
+            
         # Set default dates if not provided
         if from_date is None:
             from_date = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
@@ -278,7 +288,8 @@ class IGClient:
         params = {
             'from': from_date,
             'to': to_date,
-            'pageSize': max_results
+            'pageSize': str(max_results),
+            'detailed': 'true'
         }
         
         try:
