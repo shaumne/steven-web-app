@@ -180,7 +180,7 @@ class TradeCalculator:
                 limit_distance = MIN_DISTANCE
             
             # Calculate position size based on price_level (not original_price)
-            # Bet size hesaplama: max_position_size_gbp / price_level
+            # Pozisyon büyüklüğü hesaplama: max_position_size_gbp / price_level
             position_size = max(0.85, round(max_position_size_gbp / price_level, 2))
             
             # Pozisyon büyüklüğünü sınırla - çok büyük emirler reddedilebilir

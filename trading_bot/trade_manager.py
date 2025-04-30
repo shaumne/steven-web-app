@@ -224,36 +224,47 @@ class TradeManager:
             limit_level = round(ig_formatted_level, 4)
             
             # ADIM 3: Stop loss ve limit mesafelerini hesapla
-            # IG API'nin kabul ettiği değerleri anlamak için başarılı işlem örneğini kullanalım
-            # Başarılı örnek: Fiyat 1520, Stop ve Limit mesafeleri eşit: 20
+            # Öncelikle trade_calculator'dan gelen orijinal hesaplamaları alalım
+            original_stop_distance = trade_params['stop_distance']
+            original_limit_distance = trade_params['limit_distance']
             
+            # IG API'nin kabul ettiği değerleri anlamak için başarılı işlem örneğini kullanalım
             # Fiyat bazlı minimum mesafe (fiyatın %0.5'i)
             price_based_min_distance = current_price * 0.005
             
-            # Hem stop hem limit için ortak mesafe kullan (API'den gelen min_stop_distance ile price_based'den büyük olanı)
+            # IG API'den gelen min_stop_distance ile price_based'den büyük olanı kullan
             effective_min_distance = max(min_stop_distance, price_based_min_distance)
             
             # Ortak mesafeyi yuvarla (daha düzgün rakamlar için)
             common_distance = round(effective_min_distance, 2)  
             logger.info(f"Hesaplanan ortak mesafe: {common_distance}")
             
-            # IG API'nin gerektirdiği gibi mesafeleri hesapla
-            # BUY işleminde stop giriş fiyatının altında, limit üstünde olmalı
-            final_stop_distance = common_distance
-            final_limit_distance = common_distance
+            # ATR hesaplamaları sonucu elde edilen mesafeleri kullan
+            # Eğer çok küçüklerse, minimum mesafe değeri kullan
+            final_stop_distance = original_stop_distance
+            final_limit_distance = original_limit_distance
             
-            # Seviyeleri de hesaplayalım (log için)
+            # ATR hesaplanan mesafeler çok küçükse minimum değerleri kullan
+            if final_stop_distance < common_distance:
+                logger.warning(f"Stop distance ({final_stop_distance}) minimum değerden ({common_distance}) küçük. Minimum değer kullanılıyor.")
+                final_stop_distance = common_distance
+                
+            if final_limit_distance < common_distance:
+                logger.warning(f"Limit distance ({final_limit_distance}) minimum değerden ({common_distance}) küçük. Minimum değer kullanılıyor.")
+                final_limit_distance = common_distance
+                
+            # BUY/SELL işlemlerinde beklenen seviyeleri göstermek için log
             if trade_params['direction'] == 'BUY':
                 # Alış (BUY) işleminde stop aşağıda, limit yukarıda olur
-                expected_stop_level = limit_level - common_distance
-                expected_limit_level = limit_level + common_distance
+                expected_stop_level = limit_level - final_stop_distance
+                expected_limit_level = limit_level + final_limit_distance
             else:
                 # Satış (SELL) işleminde stop yukarıda, limit aşağıda olur
-                expected_stop_level = limit_level + common_distance
-                expected_limit_level = limit_level - common_distance
+                expected_stop_level = limit_level + final_stop_distance
+                expected_limit_level = limit_level - final_limit_distance
                 
             logger.info(f"Beklenen seviyeler: Stop={expected_stop_level}, Limit={expected_limit_level}")
-            logger.info(f"Hesaplanan mesafeler: Stop={final_stop_distance}, Limit={final_limit_distance}")
+            logger.info(f"Hesaplanan mesafeler: Stop={final_stop_distance} (original: {original_stop_distance}), Limit={final_limit_distance} (original: {original_limit_distance})")
             
             # ADIM 5: Tüm bilgileri logla
             price_info = {
@@ -265,8 +276,8 @@ class TradeManager:
                 "ig_current_price": current_price,
                 "ig_bid_price": bid_price,
                 "ig_offer_price": offer_price,
-                "original_stop_distance": min_stop_distance,
-                "original_limit_distance": min_stop_distance,
+                "original_stop_distance": original_stop_distance,
+                "original_limit_distance": original_limit_distance,
                 "calculated_stop_distance": final_stop_distance,
                 "calculated_limit_distance": final_limit_distance,
                 "min_stop_distance": min_stop_distance,
