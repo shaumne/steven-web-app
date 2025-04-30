@@ -126,15 +126,17 @@ class TradeCalculator:
             # Her zaman orijinal fiyatı sakla
             original_price = opening_price
             
-            # DOWN DIR için fiyat seviyesi hesaplama (Fiyatı %2 düşürerek)
+            # Fiyat seviyesi hesaplama:
+            # DOWN (BUY) için fiyatı %2 düşür (98%)
+            # UP (SELL) için fiyatı %2 artır (102%)
             if direction == "DOWN":
                 # Fiyat seviyesi, orijinal fiyatın %98'i olacak
                 price_level = original_price * 0.98
                 logger.info(f"Calculated price level for DOWN direction: {price_level} (98% of {original_price})")
-            else:
-                # UP için normal fiyat
-                price_level = original_price
-                logger.info(f"Using original price for UP direction: {price_level}")
+            else:  # UP direction (SELL)
+                # Fiyat seviyesi, orijinal fiyatın %102'si olacak
+                price_level = original_price * 1.02
+                logger.info(f"Calculated price level for UP direction: {price_level} (102% of {original_price})")
             
             # Normalize price if IG price is provided (API için kullanılacak)
             entry_price = price_level

@@ -254,6 +254,8 @@ class TradeManager:
                 final_limit_distance = common_distance
                 
             # BUY/SELL işlemlerinde beklenen seviyeleri göstermek için log
+            # BUY (DOWN): Giriş fiyatı = orijinal fiyat * 0.98 (fiyatın %2 altı)
+            # SELL (UP): Giriş fiyatı = orijinal fiyat * 1.02 (fiyatın %2 üstü)
             if trade_params['direction'] == 'BUY':
                 # Alış (BUY) işleminde stop aşağıda, limit yukarıda olur
                 expected_stop_level = limit_level - final_stop_distance
