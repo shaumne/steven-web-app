@@ -1,0 +1,311 @@
+{% extends "layout.html" %}
+
+{% block title %}{{ file_name }} İnceleme{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+  <!-- Dosya Bilgisi ve İstatistikler -->
+  <div class="row">
+    <div class="col-12">
+      <div class="card shadow mb-4">
+        <div class="card-header py-3 d-flex flex-row align-items-center justify-content-between">
+          <h6 class="m-0 font-weight-bold text-primary">{{ file_name }} Dosya Analizi</h6>
+          <div>
+            <a href="{{ url_for('get_activity_history_csv') }}" class="btn btn-sm btn-secondary">
+              <i class="bi bi-arrow-left"></i> Geri Dön
+            </a>
+            <a href="{{ url_for('get_activity_history_csv', download=file_name) }}" class="btn btn-sm btn-success">
+              <i class="bi bi-download"></i> İndir
+            </a>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="row">
+            <!-- İstatistikler -->
+            <div class="col-md-4">
+              <div class="card border-left-primary shadow h-100 py-2">
+                <div class="card-body">
+                  <div class="row no-gutters align-items-center">
+                    <div class="col mr-2">
+                      <div class="text-xs font-weight-bold text-primary text-uppercase mb-1">Toplam Kayıt</div>
+                      <div class="h5 mb-0 font-weight-bold text-gray-800">{{ stats.total_records }}</div>
+                    </div>
+                    <div class="col-auto">
+                      <i class="bi bi-calendar fa-2x text-gray-300"></i>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Tarih Aralığı -->
+            <div class="col-md-4">
+              <div class="card border-left-success shadow h-100 py-2">
+                <div class="card-body">
+                  <div class="row no-gutters align-items-center">
+                    <div class="col mr-2">
+                      <div class="text-xs font-weight-bold text-success text-uppercase mb-1">Tarih Aralığı</div>
+                      <div class="h6 mb-0 font-weight-bold text-gray-800">
+                        {{ stats.date_range.start }} - {{ stats.date_range.end }}
+                      </div>
+                    </div>
+                    <div class="col-auto">
+                      <i class="bi bi-calendar-event fa-2x text-gray-300"></i>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Başarı Oranı -->
+            {% if performance %}
+            <div class="col-md-4">
+              <div class="card border-left-info shadow h-100 py-2">
+                <div class="card-body">
+                  <div class="row no-gutters align-items-center">
+                    <div class="col mr-2">
+                      <div class="text-xs font-weight-bold text-info text-uppercase mb-1">Başarı Oranı</div>
+                      <div class="row no-gutters align-items-center">
+                        <div class="col-auto">
+                          <div class="h5 mb-0 mr-3 font-weight-bold text-gray-800">{{ performance.success_rate }}</div>
+                        </div>
+                        <div class="col">
+                          <div class="progress progress-sm mr-2">
+                            <div class="progress-bar bg-info" role="progressbar" 
+                                 style="width: {{ performance.success_rate }}" 
+                                 aria-valuenow="{{ performance.successful }}" 
+                                 aria-valuemin="0" 
+                                 aria-valuemax="{{ performance.total_attempts }}">
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="text-xs mt-2">
+                        <span class="badge bg-success">Başarılı: {{ performance.successful }}</span>
+                        <span class="badge bg-danger">Reddedilen: {{ performance.rejected }}</span>
+                      </div>
+                    </div>
+                    <div class="col-auto">
+                      <i class="bi bi-clipboard-check fa-2x text-gray-300"></i>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            {% endif %}
+          </div>
+          
+          <!-- İşlem Türü Dağılımı -->
+          <div class="row mt-4">
+            <div class="col-md-6">
+              <div class="card shadow mb-4">
+                <div class="card-header py-3">
+                  <h6 class="m-0 font-weight-bold text-primary">İşlem Türlerine Göre Dağılım</h6>
+                </div>
+                <div class="card-body">
+                  <div class="chart-pie pt-4 pb-2">
+                    <canvas id="activityTypePieChart"></canvas>
+                  </div>
+                  <div class="mt-4 text-center small">
+                    {% for type, count in stats.activity_types.items() %}
+                      <span class="me-2">
+                        <i class="bi bi-circle-fill" style="color: {{ '#%02X%02X%02X'|format(((loop.index*123)%255), ((loop.index*45)%255), ((loop.index*67)%255)) }}"></i> {{ type }} ({{ count }})
+                      </span>
+                    {% endfor %}
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <div class="col-md-6">
+              <div class="card shadow mb-4">
+                <div class="card-header py-3">
+                  <h6 class="m-0 font-weight-bold text-primary">Sonuç Dağılımı</h6>
+                </div>
+                <div class="card-body">
+                  <div class="chart-pie pt-4 pb-2">
+                    <canvas id="resultPieChart"></canvas>
+                  </div>
+                  <div class="mt-4 text-center small">
+                    {% for result, count in stats.result_summary.items() %}
+                      {% if loop.index <= 5 %}
+                        <span class="me-2">
+                          <i class="bi bi-circle-fill" style="color: {{ '#%02X%02X%02X'|format(((loop.index*71)%255), ((loop.index*137)%255), ((loop.index*189)%255)) }}"></i> 
+                          {{ result[:15] }}{% if result|length > 15 %}...{% endif %} ({{ count }})
+                        </span>
+                      {% endif %}
+                    {% endfor %}
+                    {% if stats.result_summary|length > 5 %}
+                      <span class="me-2">
+                        <i class="bi bi-circle-fill text-gray-500"></i> Diğer ({{ stats.result_summary|length - 5 }})
+                      </span>
+                    {% endif %}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Filtreler ve Veri Tablosu -->
+  <div class="row">
+    <div class="col-12">
+      <div class="card shadow mb-4">
+        <div class="card-header py-3">
+          <h6 class="m-0 font-weight-bold text-primary">{{ file_name }} İçeriği</h6>
+        </div>
+        <div class="card-body">
+          <!-- Filtreler -->
+          <div class="row mb-4">
+            <div class="col-md-6">
+              <form action="{{ url_for('parse_activity_csv') }}" method="get" class="row g-3 align-items-center">
+                <input type="hidden" name="file" value="{{ file_name }}">
+                <div class="col-auto">
+                  <select name="type" class="form-select">
+                    <option value="">Tüm İşlem Türleri</option>
+                    {% for type in stats.activity_types %}
+                      <option value="{{ type }}">{{ type }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <div class="col-auto">
+                  <select name="result" class="form-select">
+                    <option value="">Tüm Sonuçlar</option>
+                    <option value="Position opened">Position opened</option>
+                    <option value="Rejected">Rejected</option>
+                  </select>
+                </div>
+                <div class="col-auto">
+                  <button type="submit" class="btn btn-primary">Filtrele</button>
+                </div>
+              </form>
+            </div>
+          </div>
+          
+          <!-- Veri Tablosu -->
+          <div class="table-responsive">
+            <table class="table table-bordered" id="dataTable" width="100%" cellspacing="0">
+              <thead>
+                <tr>
+                  {% for column in columns %}
+                    <th>{{ column }}</th>
+                  {% endfor %}
+                </tr>
+              </thead>
+              <tbody>
+                {% for record in records %}
+                  <tr>
+                    {% for column in columns %}
+                      <td>{{ record[column] }}</td>
+                    {% endfor %}
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.datatables.net/1.11.5/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.11.5/js/dataTables.bootstrap5.min.js"></script>
+<script>
+  $(document).ready(function() {
+    $('#dataTable').DataTable({
+      order: [[3, 'desc'], [4, 'desc']]  // Tarih ve Zamana göre sırala
+    });
+    
+    // Activity Type Pie Chart
+    var activityTypeData = {
+      labels: [
+        {% for type, count in stats.activity_types.items() %}
+          "{{ type }}",
+        {% endfor %}
+      ],
+      datasets: [{
+        data: [
+          {% for type, count in stats.activity_types.items() %}
+            {{ count }},
+          {% endfor %}
+        ],
+        backgroundColor: [
+          {% for type, count in stats.activity_types.items() %}
+            "{{ '#%02X%02X%02X'|format(((loop.index*123)%255), ((loop.index*45)%255), ((loop.index*67)%255)) }}",
+          {% endfor %}
+        ]
+      }]
+    };
+    
+    var activityTypeCtx = document.getElementById('activityTypePieChart');
+    var activityTypePieChart = new Chart(activityTypeCtx, {
+      type: 'pie',
+      data: activityTypeData,
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            position: 'bottom'
+          }
+        }
+      }
+    });
+    
+    // Result Pie Chart
+    var resultLabels = [];
+    var resultData = [];
+    var resultColors = [];
+    
+    {% for result, count in stats.result_summary.items() %}
+      {% if loop.index <= 5 %}
+        resultLabels.push("{{ result[:15] }}{% if result|length > 15 %}...{% endif %}");
+        resultData.push({{ count }});
+        resultColors.push("{{ '#%02X%02X%02X'|format(((loop.index*71)%255), ((loop.index*137)%255), ((loop.index*189)%255)) }}");
+      {% endif %}
+    {% endfor %}
+    
+    {% if stats.result_summary|length > 5 %}
+      var otherCount = 0;
+      {% for result, count in stats.result_summary.items() %}
+        {% if loop.index > 5 %}
+          otherCount += {{ count }};
+        {% endif %}
+      {% endfor %}
+      
+      if (otherCount > 0) {
+        resultLabels.push("Diğer");
+        resultData.push(otherCount);
+        resultColors.push("#b0b0b0");
+      }
+    {% endif %}
+    
+    var resultCtx = document.getElementById('resultPieChart');
+    var resultPieChart = new Chart(resultCtx, {
+      type: 'pie',
+      data: {
+        labels: resultLabels,
+        datasets: [{
+          data: resultData,
+          backgroundColor: resultColors
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            position: 'bottom'
+          }
+        }
+      }
+    });
+  });
+</script>
+{% endblock %} 

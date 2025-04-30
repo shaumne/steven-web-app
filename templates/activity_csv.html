@@ -1,0 +1,103 @@
+{% extends "layout.html" %}
+
+{% block title %}Activity History CSV{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+  <div class="row">
+    <div class="col-12">
+      <div class="card shadow mb-4">
+        <div class="card-header py-3 d-flex flex-row align-items-center justify-content-between">
+          <h6 class="m-0 font-weight-bold text-primary">Activity History CSV Dosyaları</h6>
+          <div class="dropdown no-arrow">
+            <button class="btn btn-sm btn-primary" type="button" data-bs-toggle="modal" data-bs-target="#uploadModal">
+              <i class="bi bi-upload"></i> CSV Yükle
+            </button>
+          </div>
+        </div>
+        <div class="card-body">
+          {% if csv_files %}
+            <div class="table-responsive">
+              <table class="table table-bordered" id="dataTable" width="100%" cellspacing="0">
+                <thead>
+                  <tr>
+                    <th>Dosya Adı</th>
+                    <th>Boyut</th>
+                    <th>Değiştirilme Tarihi</th>
+                    <th>Kayıt Sayısı</th>
+                    <th>İşlemler</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for file in csv_files %}
+                  <tr>
+                    <td>{{ file.name }}</td>
+                    <td>{{ file.size }}</td>
+                    <td>{{ file.modified }}</td>
+                    <td>{{ file.row_count }}</td>
+                    <td>
+                      <a href="{{ url_for('parse_activity_csv', file=file.name) }}" class="btn btn-info btn-sm">
+                        <i class="bi bi-eye"></i> İncele
+                      </a>
+                      <a href="{{ url_for('get_activity_history_csv', download=file.name) }}" class="btn btn-success btn-sm">
+                        <i class="bi bi-download"></i> İndir
+                      </a>
+                    </td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          {% else %}
+            <div class="text-center p-4">
+              <i class="bi bi-file-earmark-spreadsheet fa-3x mb-3 text-gray-400"></i>
+              <p>Henüz hiç Activity History CSV dosyası yüklenmemiş.</p>
+              <button class="btn btn-primary" type="button" data-bs-toggle="modal" data-bs-target="#uploadModal">
+                <i class="bi bi-upload"></i> CSV Yükle
+              </button>
+            </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Upload Modal -->
+<div class="modal fade" id="uploadModal" tabindex="-1" role="dialog" aria-labelledby="uploadModalLabel" aria-hidden="true">
+  <div class="modal-dialog" role="document">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="uploadModalLabel">Activity History CSV Yükle</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form action="{{ url_for('get_activity_history_csv') }}" method="post" enctype="multipart/form-data">
+        <div class="modal-body">
+          <div class="mb-3">
+            <label for="csvFile" class="form-label">CSV Dosyası Seçin</label>
+            <input type="file" class="form-control" id="csvFile" name="file" accept=".csv" required>
+            <small class="form-text text-muted">Sadece "ActivityHistory-*.csv" formatındaki dosyalar kabul edilir.</small>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">İptal</button>
+          <button type="submit" class="btn btn-primary">Yükle</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.datatables.net/1.11.5/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.11.5/js/dataTables.bootstrap5.min.js"></script>
+<script>
+  $(document).ready(function() {
+    $('#dataTable').DataTable({
+      order: [[2, 'desc']]
+    });
+  });
+</script>
+{% endblock %} 

@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API Veri Görünümü</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        #jsonView {
+            background-color: #fff;
+            border-radius: 5px;
+            padding: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            overflow: auto;
+            max-height: 80vh;
+            white-space: pre-wrap;
+            line-height: 1.5;
+        }
+        #rawView {
+            font-family: monospace;
+            background-color: #f8f9fa;
+            padding: 10px;
+            border-radius: 5px;
+            overflow: auto;
+            max-height: 80vh;
+            white-space: pre-wrap;
+        }
+        .toolbar {
+            margin-bottom: 15px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        #statusBar {
+            font-size: 14px;
+            color: #6c757d;
+            margin-bottom: 10px;
+            padding: 5px;
+            border-radius: 3px;
+        }
+        /* Önemli alanlar için renkler */
+        .highlighted-field {
+            font-weight: bold;
+            padding: 2px 4px;
+            border-radius: 3px;
+        }
+        .deal-id {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .reference {
+            background-color: #cce5ff;
+            color: #004085;
+        }
+        .epic {
+            background-color: #fff3cd;
+            color: #856404;
+        }
+        /* Arama vurgulaması */
+        mark {
+            background-color: #ffeb3b;
+            color: #000;
+            padding: 0 2px;
+            border-radius: 2px;
+        }
+        /* Gelişmiş görselleştirme için renkler */
+        .key-field {
+            color: #333;
+            font-weight: 600;
+        }
+        .string-value {
+            color: #0066cc;
+        }
+        .number-value {
+            color: #e83e8c;
+        }
+        .boolean-value {
+            color: #28a745;
+        }
+        .null-value {
+            color: #dc3545;
+            font-style: italic;
+        }
+        /* Responsive özellikler */
+        @media (max-width: 768px) {
+            .toolbar {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            .toolbar select, .toolbar button {
+                width: 100%;
+                margin-bottom: 5px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container-fluid">
+        <h1 class="mb-4">API Veri Görüntüleyici</h1>
+        
+        <div class="toolbar">
+            <button id="fetchDataBtn" class="btn btn-primary">
+                <i class="bi bi-cloud-download"></i> API Verisi Çek
+            </button>
+            <select id="endpointSelect" class="form-select" style="max-width: 300px;">
+                <option value="/positions">Açık Pozisyonlar</option>
+                <option value="/orders">Çalışan Emirler</option>
+                <option value="/history/activity?days=1">Son 24 Saat Aktivitesi</option>
+                <option value="/history/transactions?days=7">Son 7 Gün İşlemleri</option>
+                <option value="/history/all?days=7">Tüm Geçmiş (7 gün)</option>
+                <option value="/position/today">Bugünkü İşlemler</option>
+            </select>
+            <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="formatToggle" checked>
+                <label class="form-check-label" for="formatToggle">
+                    JSON Formatla
+                </label>
+            </div>
+            <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="highlightToggle" checked>
+                <label class="form-check-label" for="highlightToggle">
+                    Önemli Alanları Vurgula
+                </label>
+            </div>
+            <button id="searchBtn" class="btn btn-outline-primary">
+                <i class="bi bi-search"></i> Ara
+            </button>
+            <button id="clearBtn" class="btn btn-secondary">
+                <i class="bi bi-trash"></i> Temizle
+            </button>
+            <button id="backBtn" class="btn btn-outline-secondary">
+                <i class="bi bi-arrow-left"></i> Geri Dön
+            </button>
+        </div>
+        
+        <div id="searchArea" class="mb-3" style="display: none;">
+            <div class="input-group">
+                <input type="text" class="form-control" id="searchInput" placeholder="JSON içinde ara...">
+                <button class="btn btn-primary" id="doSearchBtn">
+                    <i class="bi bi-search"></i> Ara
+                </button>
+                <button class="btn btn-outline-secondary" id="closeSearchBtn">
+                    <i class="bi bi-x"></i>
+                </button>
+            </div>
+        </div>
+        
+        <div id="statusBar"></div>
+        
+        <div class="tab-content">
+            <div id="jsonView" class="tab-pane active"></div>
+            <div id="rawView" class="tab-pane d-none"></div>
+        </div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        $(document).ready(function() {
+            let highlightEnabled = true;
+            
+            // Veri çekme butonu
+            $('#fetchDataBtn').click(function() {
+                fetchData();
+            });
+            
+            // Temizle butonu
+            $('#clearBtn').click(function() {
+                $('#jsonView').empty();
+                $('#rawView').empty();
+                $('#statusBar').text('');
+            });
+            
+            // Geri dön butonu
+            $('#backBtn').click(function() {
+                window.history.back();
+            });
+            
+            // Format seçeneğini değiştirme
+            $('#formatToggle').change(function() {
+                toggleView();
+            });
+            
+            // Highlight toggle
+            $('#highlightToggle').change(function() {
+                highlightEnabled = $(this).is(':checked');
+                // Eğer varsa, mevcut veriyi yeniden göster
+                if ($('#jsonView').html()) {
+                    displayData(window.currentData || {});
+                }
+            });
+            
+            // Arama butonları
+            $('#searchBtn').click(function() {
+                $('#searchArea').toggle();
+                if ($('#searchArea').is(':visible')) {
+                    $('#searchInput').focus();
+                }
+            });
+            
+            $('#closeSearchBtn').click(function() {
+                $('#searchArea').hide();
+                clearSearch();
+            });
+            
+            $('#doSearchBtn').click(function() {
+                searchInJson();
+            });
+            
+            $('#searchInput').on('keypress', function(e) {
+                if (e.which === 13) {
+                    searchInJson();
+                }
+            });
+            
+            // Arama işlevi
+            function searchInJson() {
+                const searchText = $('#searchInput').val().toLowerCase();
+                if (!searchText) return;
+                
+                // Mevcut veri varsa JSON view'da ara
+                const content = $('#jsonView').html();
+                if (!content) return;
+                
+                // Önceki vurgulamaları temizle
+                clearSearch();
+                
+                // Metni ara ve vurgula
+                const regex = new RegExp(escapeRegExp(searchText), 'gi');
+                const highlightedContent = content.replace(regex, '<mark class="bg-warning">$&</mark>');
+                $('#jsonView').html(highlightedContent);
+                
+                // İlk bulunan konuma kaydır
+                const firstMatch = $('#jsonView').find('mark').first();
+                if (firstMatch.length) {
+                    // İlk bulunan konuma scroll et
+                    $('#jsonView').animate({
+                        scrollTop: firstMatch.position().top - $('#jsonView').height()/2
+                    }, 200);
+                }
+                
+                // Sonuç sayısını göster
+                const matchCount = $('#jsonView').find('mark').length;
+                $('#statusBar').html(`<span class="badge bg-success">${matchCount}</span> eşleşme bulundu`);
+            }
+            
+            // Arama vurgularını temizle
+            function clearSearch() {
+                const content = $('#jsonView').html();
+                if (!content) return;
+                
+                // mark etiketlerini temizle ama içeriği koru
+                const cleanContent = content.replace(/<mark class="bg-warning">(.*?)<\/mark>/g, '$1');
+                $('#jsonView').html(cleanContent);
+            }
+            
+            // Regex için escape
+            function escapeRegExp(string) {
+                return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            }
+            
+            // Sayfa ilk yüklendiğinde otomatik veri çek
+            fetchData();
+            
+            function fetchData() {
+                const endpoint = $('#endpointSelect').val();
+                $('#statusBar').html(`<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> ${endpoint} adresinden veri yükleniyor...`);
+                
+                $.ajax({
+                    url: endpoint,
+                    type: 'GET',
+                    success: function(data) {
+                        // Verileri tarihe göre sırala (yeniden eskiye)
+                        sortDataByDate(data);
+                        
+                        // Referans ve deal ID'leri daha görünür yap
+                        if (highlightEnabled) {
+                            highlightImportantFields(data);
+                        }
+                        
+                        // Veriyi global değişkene kaydet
+                        window.currentData = data;
+                        
+                        displayData(data);
+                        $('#statusBar').text(`Veri başarıyla yüklendi: ${endpoint}`);
+                    },
+                    error: function(xhr, status, error) {
+                        $('#statusBar').html(`<span class="text-danger">Hata: ${error}</span>`);
+                        try {
+                            const errorData = JSON.parse(xhr.responseText);
+                            displayData(errorData);
+                        } catch(e) {
+                            $('#jsonView').html(`<div class="alert alert-danger">API isteği başarısız: ${xhr.status} ${error}</div>`);
+                            $('#rawView').text(xhr.responseText);
+                        }
+                    }
+                });
+            }
+            
+            // Verileri tarihe göre sırala (yeniden eskiye)
+            function sortDataByDate(data) {
+                // Aktivite verilerini sırala
+                if (data.activities && Array.isArray(data.activities)) {
+                    data.activities.sort((a, b) => {
+                        // Tarih alanları için farklı adlar olabilir
+                        const dateA = a.date || a.dateUtc || a.createdDate || a.time || '';
+                        const dateB = b.date || b.dateUtc || b.createdDate || b.time || '';
+                        return dateB.localeCompare(dateA); // Yeniden eskiye
+                    });
+                }
+                
+                // İşlem geçmişi verilerini sırala
+                if (data.transactions && Array.isArray(data.transactions)) {
+                    data.transactions.sort((a, b) => {
+                        const dateA = a.date || a.dateUtc || a.createdDate || a.time || '';
+                        const dateB = b.date || b.dateUtc || b.createdDate || b.time || '';
+                        return dateB.localeCompare(dateA); // Yeniden eskiye
+                    });
+                }
+                
+                // Pozisyonları sırala
+                if (data.positions && Array.isArray(data.positions)) {
+                    data.positions.sort((a, b) => {
+                        const dateA = a.createdDate || a.date || a.time || '';
+                        const dateB = b.createdDate || b.date || b.time || '';
+                        return dateB.localeCompare(dateA); // Yeniden eskiye
+                    });
+                }
+                
+                return data;
+            }
+            
+            // Önemli alanları belirginleştir
+            function highlightImportantFields(data) {
+                // Tüm diziler için
+                const arrayFields = ['activities', 'transactions', 'positions', 'orders'];
+                
+                arrayFields.forEach(field => {
+                    if (data[field] && Array.isArray(data[field])) {
+                        data[field].forEach(item => {
+                            // Deal ID ve reference için özel alanlar ekle
+                            if (item.dealId || item.deal_id) {
+                                item._highlightedDealId = item.dealId || item.deal_id;
+                            }
+                            
+                            if (item.dealReference || item.deal_reference) {
+                                item._highlightedReference = item.dealReference || item.deal_reference;
+                            }
+                            
+                            // Epic ve symbol için
+                            if (item.epic) {
+                                item._highlightedEpic = item.epic;
+                            }
+                            
+                            if (item.instrumentName || item.market_name) {
+                                item._highlightedSymbol = item.instrumentName || item.market_name;
+                            }
+                        });
+                    }
+                });
+                
+                return data;
+            }
+            
+            function displayData(data) {
+                // JSON görünümü
+                const formattedJson = JSON.stringify(data, null, 2);
+                $('#jsonView').html(syntaxHighlight(formattedJson));
+                
+                // Ham veri görünümü
+                $('#rawView').text(JSON.stringify(data));
+                
+                // Görünümü değiştir
+                toggleView();
+            }
+            
+            function toggleView() {
+                const isFormatted = $('#formatToggle').is(':checked');
+                if (isFormatted) {
+                    $('#jsonView').removeClass('d-none');
+                    $('#rawView').addClass('d-none');
+                } else {
+                    $('#jsonView').addClass('d-none');
+                    $('#rawView').removeClass('d-none');
+                }
+            }
+            
+            // JSON syntax highlighting
+            function syntaxHighlight(json) {
+                if (!json) return '';
+                
+                json = json.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                
+                // Özellikle vurgulanan alanlar için stil tanımları
+                const highlightedKeywords = {
+                    'deal_id': 'highlighted-field deal-id',
+                    'dealId': 'highlighted-field deal-id',
+                    'deal_reference': 'highlighted-field reference',
+                    'dealReference': 'highlighted-field reference',
+                    'reference': 'highlighted-field reference',
+                    'epic': 'highlighted-field epic',
+                    'symbol': 'highlighted-field epic',
+                    'instrumentName': 'highlighted-field epic',
+                    'market_name': 'highlighted-field epic',
+                    '_highlightedDealId': 'highlighted-field deal-id',
+                    '_highlightedReference': 'highlighted-field reference',
+                    '_highlightedEpic': 'highlighted-field epic',
+                    'status': 'key-field'
+                };
+                
+                // Önemli değerler için tanımlar
+                const importantValues = {
+                    'success': 'text-success fw-bold',
+                    'error': 'text-danger fw-bold',
+                    'BUY': 'text-success fw-bold',
+                    'SELL': 'text-danger fw-bold',
+                    'OPEN': 'text-success',
+                    'CLOSED': 'text-secondary',
+                    'REJECTED': 'text-danger'
+                };
+                
+                // JSON string içinde pattern eşleştirme ve replace fonksiyonu
+                return json.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, function(match) {
+                    // Key mi value mu belirleme
+                    let cls = 'string-value';
+                    
+                    if (/^"/.test(match)) {
+                        // Key mi?
+                        if (/:$/.test(match)) {
+                            // Key içeriğini ayıkla
+                            const key = match.replace(/"/g, '').replace(/:$/, '');
+                            
+                            // Özel vurgulanan alanlar için stil sınıfı seç
+                            if (highlightedKeywords[key]) {
+                                cls = highlightedKeywords[key];
+                            } else {
+                                cls = 'key-field';
+                            }
+                        } else {
+                            // String değer - özel işaretleme gerektiren bir değer mi?
+                            let value = match.replace(/"/g, '');
+                            if (importantValues[value]) {
+                                cls = importantValues[value];
+                            }
+                        }
+                    } else if (/true|false/.test(match)) {
+                        cls = 'boolean-value'; // boolean
+                    } else if (/null/.test(match)) {
+                        cls = 'null-value'; // null
+                    } else {
+                        cls = 'number-value'; // sayı
+                    }
+                    
+                    return '<span class="' + cls + '">' + match + '</span>';
+                });
+            }
+        });
+    </script>
+</body>
+</html> 

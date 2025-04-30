@@ -45,20 +45,46 @@ class TradeCalculator:
         """
         TradingView fiyatını IG formatına çevir
         """
-        tv_digits = self.get_significant_digits(tv_price)
-        ig_digits = self.get_significant_digits(ig_price)
-        
-        # Basamak farkını bul
-        digit_diff = ig_digits - tv_digits
-        
-        if digit_diff > 0:
-            # IG fiyatı daha fazla basamaklı
-            normalized = float(tv_price) * (10 ** digit_diff)
-            logger.info(f"Price normalization: TV={tv_price} ({tv_digits} digits) -> IG={ig_price} ({ig_digits} digits), multiplier=1e{digit_diff}, result={normalized}")
-            return normalized
+        # Fiyat formatını düzeltme kontrolü
+        # Bazı coinlerde IG fiyatı 12430.0 iken TradingView'den 124.3 gibi gelir
+        # Bu durumu tespit et ve ölçeklendir
+        if ig_price is not None and ig_price > 0 and tv_price > 0:
+            ig_digits = len(str(int(ig_price)))
+            tv_digits = len(str(int(tv_price)))
+            
+            # 3 veya daha fazla basamak farkı varsa, bu muhtemelen bir coin
+            digit_diff = ig_digits - tv_digits
+            
+            if digit_diff >= 2:
+                # IG fiyatı daha fazla basamaklı - çarparak normalize et
+                normalized = float(tv_price) * (10 ** digit_diff)
+                logger.info(f"Price normalization for crypto/coin: TV={tv_price} ({tv_digits} digits) -> IG={ig_price} ({ig_digits} digits), multiplier=1e{digit_diff}, result={normalized}")
+                return normalized
+            elif digit_diff <= -2:
+                # TradingView fiyatı daha fazla basamaklı - bölerek normalize et
+                normalized = float(tv_price) / (10 ** abs(digit_diff))
+                logger.info(f"Price normalization for crypto/coin: TV={tv_price} ({tv_digits} digits) -> IG={ig_price} ({ig_digits} digits), divider=1e{abs(digit_diff)}, result={normalized}")
+                return normalized
+            else:
+                # Basamak farkı az - normal hesaplama yap
+                tv_digits = self.get_significant_digits(tv_price)
+                ig_digits = self.get_significant_digits(ig_price)
+                
+                # Basamak farkını bul
+                digit_diff = ig_digits - tv_digits
+                
+                if digit_diff > 0:
+                    # IG fiyatı daha fazla basamaklı
+                    normalized = float(tv_price) * (10 ** digit_diff)
+                    logger.info(f"Price normalization: TV={tv_price} ({tv_digits} digits) -> IG={ig_price} ({ig_digits} digits), multiplier=1e{digit_diff}, result={normalized}")
+                    return normalized
+                else:
+                    # Aynı basamak sayısı veya IG daha az basamaklı (nadir durum)
+                    logger.info(f"No normalization needed: TV={tv_price} ({tv_digits} digits), IG={ig_price} ({ig_digits} digits)")
+                    return float(tv_price)
         else:
-            # Aynı basamak sayısı veya IG daha az basamaklı (nadir durum)
-            logger.info(f"No normalization needed: TV={tv_price} ({tv_digits} digits), IG={ig_price} ({ig_digits} digits)")
+            # IG fiyatı yoksa TV fiyatını aynen döndür
+            logger.info(f"No normalization possible without IG price. Using TV price: {tv_price}")
             return float(tv_price)
     
     def calculate_trade_parameters(self, ticker, direction, opening_price, atr_values, ig_price=None):
@@ -100,11 +126,21 @@ class TradeCalculator:
             # Her zaman orijinal fiyatı sakla
             original_price = opening_price
             
+            # DOWN DIR için fiyat seviyesi hesaplama (Fiyatı %2 düşürerek)
+            if direction == "DOWN":
+                # Fiyat seviyesi, orijinal fiyatın %98'i olacak
+                price_level = original_price * 0.98
+                logger.info(f"Calculated price level for DOWN direction: {price_level} (98% of {original_price})")
+            else:
+                # UP için normal fiyat
+                price_level = original_price
+                logger.info(f"Using original price for UP direction: {price_level}")
+            
             # Normalize price if IG price is provided (API için kullanılacak)
-            entry_price = opening_price
+            entry_price = price_level
             if ig_price is not None:
-                entry_price = self.normalize_price(opening_price, ig_price)
-                logger.info(f"Normalized entry price from {opening_price} to {entry_price}")
+                entry_price = self.normalize_price(price_level, ig_price)
+                logger.info(f"Normalized entry price from {price_level} to {entry_price}")
             
             # Check if atr_values has enough elements
             if len(atr_values) < max(atr_sl_period, atr_tp_period):
@@ -127,12 +163,14 @@ class TradeCalculator:
                 logger.warning(f"ATR Take Profit value is zero or negative: {atr_tp}. Using default 2% of price.")
                 atr_tp = 0.02 * original_price
             
-            # Calculate stop loss and take profit distances in points
-            stop_distance = atr_sl * atr_sl_multiple
-            limit_distance = atr_tp * atr_tp_multiple
+            # Calculate stop loss distance - ATR stop 3 için 336% (3.36x)
+            stop_distance = atr_sl * 3.36
+            
+            # Calculate take profit distance - ATR profit 7 için 246% (2.46x)
+            limit_distance = atr_tp * 2.46
             
             # Stop ve limit mesafesi minimum değer kontrolü
-            MIN_DISTANCE = 0.001 * original_price  # Fiyatın en az %0.1'i
+            MIN_DISTANCE = 0.001 * price_level  # Fiyatın en az %0.1'i
             if stop_distance < MIN_DISTANCE:
                 logger.warning(f"Stop distance {stop_distance} is too small. Setting to minimum {MIN_DISTANCE}")
                 stop_distance = MIN_DISTANCE
@@ -141,8 +179,9 @@ class TradeCalculator:
                 logger.warning(f"Limit distance {limit_distance} is too small. Setting to minimum {MIN_DISTANCE}")
                 limit_distance = MIN_DISTANCE
             
-            # Calculate position size based on ORIGINAL price (not normalized price)
-            position_size = max(1.0, round(max_position_size_gbp / original_price, 2))
+            # Calculate position size based on price_level (not original_price)
+            # Bet size hesaplama: max_position_size_gbp / price_level
+            position_size = max(0.85, round(max_position_size_gbp / price_level, 2))
             
             # Pozisyon büyüklüğünü sınırla - çok büyük emirler reddedilebilir
             MAX_SAFE_POSITION_SIZE = 40.0
@@ -152,8 +191,9 @@ class TradeCalculator:
             
             # Log all parameters for easier debugging
             logger.info(f"Trade parameters for {ticker}:")
-            logger.info(f"Original TV Price: {original_price}, Entry Price: {entry_price}")
-            logger.info(f"Position Size: {position_size} (calculated using original price: {original_price})")
+            logger.info(f"Original TV Price: {original_price}, Calculated Price Level: {price_level}")
+            logger.info(f"Entry Price (normalized): {entry_price}")
+            logger.info(f"Position Size: {position_size} (calculated using price level: {price_level})")
             logger.info(f"Stop Distance: {stop_distance}")
             logger.info(f"Limit Distance: {limit_distance}")
             logger.info(f"ATR Values - Stop: {atr_sl}, Take Profit: {atr_tp}")
@@ -163,6 +203,7 @@ class TradeCalculator:
                 'ticker': ticker,
                 'direction': trade_direction,
                 'original_price': round(original_price, 4),  # TradingView'dan gelen orijinal fiyat
+                'price_level': round(price_level, 4),        # Hesaplanan gerçek fiyat seviyesi (DOWN için %98)
                 'entry_price': round(entry_price, 4),        # Normalize edilmiş fiyat
                 'stop_distance': round(stop_distance, 4),
                 'limit_distance': round(limit_distance, 4),

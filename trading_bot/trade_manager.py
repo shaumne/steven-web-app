@@ -68,11 +68,30 @@ class TradeManager:
         if not market_details:
             return {"status": "error", "message": f"Failed to get market details for {ticker}"}
         
+        # IG tarafından sağlanan güncel fiyat bilgilerini al
         current_price = market_details.get('current_price', 0)
+        bid_price = market_details.get('bid', 0)
+        offer_price = market_details.get('offer', 0)
+        
         if not current_price:
             return {"status": "error", "message": f"Failed to get current price for {ticker}"}
         
+        # Fiyat bilgilerini detaylı şekilde logla
         logger.info(f"Processing alert for {ticker}: TV Price={opening_price}, IG Price={current_price}")
+        logger.info(f"IG Bid/Offer: Bid={bid_price}, Offer={offer_price}")
+        
+        # JSON formatında fiyat bilgilerini logla (hata ayıklama için)
+        ig_prices_json = {
+            "prices": {
+                "bid": bid_price,
+                "current_price": current_price,
+                "offer": offer_price
+            },
+            "tv_price": opening_price,
+            "ticker": ticker,
+            "epic": epic
+        }
+        logger.info(f"IG prices JSON format: {json.dumps(ig_prices_json)}")
         
         # Calculate trade parameters with price normalization
         trade_params = self.trade_calculator.calculate_trade_parameters(
@@ -81,6 +100,13 @@ class TradeManager:
         
         if not trade_params:
             return {"status": "error", "message": f"Failed to calculate trade parameters for {ticker}"}
+        
+        # Log the IG price information
+        trade_params['ig_prices'] = {
+            'bid': bid_price,
+            'offer': offer_price,
+            'current_price': current_price
+        }
         
         # Execute the trade
         return self._execute_trade(ticker, trade_params)
@@ -158,33 +184,71 @@ class TradeManager:
                 logger.error(f"Market details alınamadı: {ticker}")
                 return {"status": "error", "message": f"Failed to get market details for {ticker}"}
                 
+            # IG'den gelen fiyat bilgilerini al
             current_price = market_details.get('current_price', 0)
             market_status = market_details.get('market_status', 'CLOSED')
+            bid_price = market_details.get('bid', 0)
+            offer_price = market_details.get('offer', 0)
             
-            # TradingView'dan gelen orijinal fiyatı kullan
+            # Hesaplanan price_level değerini kullan (DOWN dir için %98 uygulanmış fiyat)
             original_price = trade_params['original_price']
+            price_level = trade_params['price_level']
             
-            # CRITICAL: TradingView'den gelen orijinal fiyatı doğrudan kullanıyoruz!
-            # Bu fiyat API'den gelen normalize edilmiş fiyat değil, TV'den gelen fiyat
-            limit_level = original_price
+            # IG fiyat formatını kontrol et ve SADECE GİRİŞ FİYATINI dönüştür, diğer değerleri olduğu gibi bırak
+            ig_format_multiplier = 1
+            
+            # IG ve TradingView fiyat formatı farkını hesapla
+            if current_price > 0 and price_level > 0:
+                # Basamak sayısı farkını kontrol et
+                ig_digits = len(str(int(current_price)))
+                tv_digits = len(str(int(price_level)))
+                
+                # 2 veya daha fazla basamak farkı varsa bu bir formatlama farkıdır
+                digit_diff = ig_digits - tv_digits
+                if digit_diff >= 2:
+                    ig_format_multiplier = 10 ** digit_diff
+                    logger.info(f"IG fiyat formatı TradingView'den farklı: {digit_diff} basamak farkı tespit edildi")
+                    logger.info(f"Fiyat ölçeklendirme çarpanı: {ig_format_multiplier}")
+            
+            # SADECE GİRİŞ FİYATINI IG formatına dönüştür
+            ig_formatted_level = price_level * ig_format_multiplier
             
             # Limit fiyatını düzgün formatta tut (maks 4 decimal)
-            limit_level = round(limit_level, 4)
+            limit_level = round(ig_formatted_level, 4)
+            
+            # Orijinal ve ölçeklendirilmiş fiyatları logla
+            price_info = {
+                "original_price": original_price,
+                "calculated_price_level": price_level,
+                "ig_format_multiplier": ig_format_multiplier,
+                "ig_formatted_level": ig_formatted_level,
+                "final_limit_level": limit_level,
+                "ig_current_price": current_price,
+                "ig_bid_price": bid_price,
+                "ig_offer_price": offer_price
+            }
+            
+            logger.info(f"Fiyat dönüştürme bilgileri: {json.dumps(price_info)}")
             
             logger.info(f"İşlem detayları:")
             logger.info(f"Piyasa durumu: {market_status}, IG Fiyatı: {current_price}")
-            logger.info(f"TradingView fiyatı: {original_price}, Kullanılan Limit Seviyesi: {limit_level}")
+            logger.info(f"TradingView fiyatı: {original_price}, Hesaplanan Fiyat Seviyesi: {price_level}")
+            logger.info(f"IG Formatında Limit Seviyesi: {limit_level}")
             logger.info(f"Yön: {trade_params['direction']}, Boyut: {trade_params['position_size']}")
             logger.info(f"Stop Distance: {trade_params['stop_distance']}, Limit Distance: {trade_params['limit_distance']}")
             
-            # Pozisyon oluştur
+            # Stop ve limit mesafelerini orijinal değerlerinde bırak - bunları dönüştürme
+            stop_distance = trade_params['stop_distance']
+            limit_distance = trade_params['limit_distance']
+            
+            # Pozisyon oluştur - SADECE GİRİŞ FİYATI dönüştürülmüş, diğer değerler orijinal
             result = self.ig_client.create_position(
                 epic=epic,
                 direction=trade_params['direction'],
                 size=trade_params['position_size'],
                 limit_level=limit_level,
-                limit_distance=trade_params['limit_distance'],
-                stop_distance=trade_params['stop_distance'],
+                limit_distance=limit_distance,
+                stop_distance=stop_distance,
                 use_limit_order=True
             )
             
@@ -211,8 +275,8 @@ class TradeManager:
                     "original_price": original_price,
                     "current_ig_price": current_price,
                     "size": trade_params['position_size'],
-                    "stop_distance": trade_params['stop_distance'],
-                    "limit_distance": trade_params['limit_distance'],
+                    "stop_distance": stop_distance,
+                    "limit_distance": limit_distance,
                     "order_type": "LIMIT"
                 }
             else:
@@ -248,7 +312,7 @@ class TradeManager:
             
         except Exception as e:
             logger.error(f"Error executing trade: {e}")
-            return {"status": "error", "message": f"Error executing trade: {str(e)}"}
+            return {"status": "error", "message": f"Error executing trade: {str(e)}", "ticker": ticker}
     
     def check_position_status(self, deal_reference=None, ticker=None):
         """

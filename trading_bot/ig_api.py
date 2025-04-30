@@ -416,81 +416,72 @@ class IGClient:
     
     def _get_market_details(self, epic):
         """
-        Get market details including current price, market state, and minimum distances
+        Get details for a specific market
         
         Args:
-            epic (str): The IG epic code for the instrument
+            epic (str): The instrument's EPIC code
             
         Returns:
-            dict: Market details or None if failed
+            dict: Dictionary containing market details or None if failed
         """
         if not self._ensure_session():
             return None
-            
-        market_url = f"{self.BASE_URL}/markets/{epic}"
-        market_headers = self.headers.copy()
-        market_headers['Version'] = '3'  # Version 3 provides more detailed market data
+        
+        url = f"{self.BASE_URL}/markets/{epic}"
+        
+        # Version başlığını ayarla
+        headers = self.headers.copy()
+        headers['Version'] = '3'
         
         try:
-            market_response = self.session.get(market_url, headers=market_headers)
-            if market_response.status_code == 200:
-                market_data = market_response.json()
+            response = self.session.get(url, headers=headers)
+            
+            if response.status_code == 200:
+                data = response.json()
                 
-                # Extract data
-                snapshot = market_data.get('snapshot', {})
-                dealing_rules = market_data.get('dealingRules', {})
-                instrument = market_data.get('instrument', {})
-                
-                # Get current bid/offer prices
-                bid = snapshot.get('bid', 0)
-                offer = snapshot.get('offer', 0)
-                
-                # Get market status
-                market_status = snapshot.get('marketStatus', 'CLOSED')
-                
-                # Get minimum stop and limit distances
-                min_normal_stop = dealing_rules.get('minNormalStopOrLimitDistance', {})
-                min_stop_distance = 0
-                min_limit_distance = 0
-                
-                if min_normal_stop:
-                    min_distance_unit = min_normal_stop.get('unit', 'POINTS')
-                    min_distance_value = float(min_normal_stop.get('value', 0))
+                # Extract relevant details
+                try:
+                    snapshot = data.get('snapshot', {})
+                    dealing_rules = data.get('dealingRules', {})
                     
-                    if min_distance_unit == 'PERCENTAGE':
-                        # Convert percentage to points based on current price
-                        mid_price = (bid + offer) / 2
-                        min_stop_distance = (mid_price * min_distance_value) / 100
-                        min_limit_distance = min_stop_distance
+                    # Get bid/offer prices
+                    bid = snapshot.get('bid')
+                    offer = snapshot.get('offer')
+                    
+                    # Calculate the current price as the midpoint
+                    if bid is not None and offer is not None:
+                        current_price = (bid + offer) / 2
                     else:
-                        min_stop_distance = min_distance_value
-                        min_limit_distance = min_distance_value
-                
-                # Get point size/value
-                lot_size = instrument.get('lotSize', 1)
-                currency = instrument.get('currencies', [{}])[0].get('code', 'GBP')
-                contract_size = instrument.get('contractSize', 1)
-                
-                logger.info(f"Market details for {epic} - Bid: {bid}, Offer: {offer}, Status: {market_status}")
-                logger.info(f"Min stop distance: {min_stop_distance}, Min limit distance: {min_limit_distance}")
-                
-                return {
-                    'bid': bid,
-                    'offer': offer,
-                    'current_price': (bid + offer) / 2,  # Mid price
-                    'market_status': market_status,
-                    'min_stop_distance': min_stop_distance,
-                    'min_limit_distance': min_limit_distance,
-                    'lot_size': lot_size,
-                    'currency': currency,
-                    'contract_size': contract_size
-                }
+                        current_price = None
+                        
+                    # Get market status
+                    market_status = snapshot.get('marketStatus', 'CLOSED')
+                    
+                    # Debugger
+                    logger.info(f"Market details for {epic}:")
+                    logger.info(f"Bid: {bid}, Offer: {offer}, Calculated Current Price: {current_price}")
+                    logger.info(f"Market Status: {market_status}")
+                    
+                    # Return the market details
+                    return {
+                        'current_price': current_price,
+                        'bid': bid,
+                        'offer': offer,
+                        'market_status': market_status,
+                        'min_deal_size': dealing_rules.get('minDealSize', {}).get('value', 0.1),
+                        'min_stop_distance': dealing_rules.get('minNormalStopOrLimitDistance', {}).get('value', 0),
+                        'min_limit_distance': dealing_rules.get('minControlledRiskStopDistance', {}).get('value', 0)
+                    }
+                    
+                except Exception as e:
+                    logger.error(f"Error parsing market details for {epic}: {e}")
+                    return None
             else:
-                self._log_error_response(market_response, f"Failed to get market details for {epic}")
+                self._log_error_response(response, f"Failed to get market details for {epic}")
                 return None
                 
         except Exception as e:
-            logger.error(f"Exception while getting market details: {e}")
+            logger.error(f"Exception while getting market details for {epic}: {e}")
             return None
     
     def _create_market_position(self, epic, direction, size, limit_distance, stop_distance, expiry):
