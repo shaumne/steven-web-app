@@ -178,7 +178,7 @@ class TradeManager:
             # Her zaman LIMIT emirleri kullanacağız - 7/24 çalışması için
             logger.info(f"LIMIT emri oluşturuluyor: {ticker} için {trade_params['direction']}")
             
-            # IG platformundan piyasa detaylarını al - sadece loglama için
+            # IG platformundan piyasa detaylarını al
             market_details = self.ig_client._get_market_details(epic)
             if not market_details:
                 logger.error(f"Market details alınamadı: {ticker}")
@@ -190,14 +190,23 @@ class TradeManager:
             bid_price = market_details.get('bid', 0)
             offer_price = market_details.get('offer', 0)
             
-            # Hesaplanan price_level değerini kullan (DOWN dir için %98 uygulanmış fiyat)
+            # API'den alınan minimum stop distance değeri
+            min_stop_distance = market_details.get('min_stop_distance', 0)
+            if min_stop_distance == 0:
+                # Varsayılan değer: fiyatın %1'i
+                min_stop_distance = current_price * 0.01
+                logger.warning(f"Min stop distance bilgisi alınamadı, varsayılan olarak fiyatın %1'i kullanılıyor: {min_stop_distance}")
+            else:
+                logger.info(f"Market min stop distance: {min_stop_distance}")
+            
+            # TradingView'den gelen orijinal fiyat ve hesaplanan fiyat seviyesi
             original_price = trade_params['original_price']
             price_level = trade_params['price_level']
             
-            # IG fiyat formatını kontrol et ve SADECE GİRİŞ FİYATINI dönüştür, diğer değerleri olduğu gibi bırak
+            # ADIM 1: Fiyat formatı dönüşümü
+            # IG ile TradingView arasındaki fiyat formatı farkını hesapla
             ig_format_multiplier = 1
             
-            # IG ve TradingView fiyat formatı farkını hesapla
             if current_price > 0 and price_level > 0:
                 # Basamak sayısı farkını kontrol et
                 ig_digits = len(str(int(current_price)))
@@ -210,13 +219,43 @@ class TradeManager:
                     logger.info(f"IG fiyat formatı TradingView'den farklı: {digit_diff} basamak farkı tespit edildi")
                     logger.info(f"Fiyat ölçeklendirme çarpanı: {ig_format_multiplier}")
             
-            # SADECE GİRİŞ FİYATINI IG formatına dönüştür
+            # ADIM 2: Giriş fiyatını IG formatına dönüştür
             ig_formatted_level = price_level * ig_format_multiplier
-            
-            # Limit fiyatını düzgün formatta tut (maks 4 decimal)
             limit_level = round(ig_formatted_level, 4)
             
-            # Orijinal ve ölçeklendirilmiş fiyatları logla
+            # ADIM 3: Stop loss ve limit mesafelerini hesapla
+            # IG API'nin kabul ettiği değerleri anlamak için başarılı işlem örneğini kullanalım
+            # Başarılı örnek: Fiyat 1520, Stop ve Limit mesafeleri eşit: 20
+            
+            # Fiyat bazlı minimum mesafe (fiyatın %0.5'i)
+            price_based_min_distance = current_price * 0.005
+            
+            # Hem stop hem limit için ortak mesafe kullan (API'den gelen min_stop_distance ile price_based'den büyük olanı)
+            effective_min_distance = max(min_stop_distance, price_based_min_distance)
+            
+            # Ortak mesafeyi yuvarla (daha düzgün rakamlar için)
+            common_distance = round(effective_min_distance, 2)  
+            logger.info(f"Hesaplanan ortak mesafe: {common_distance}")
+            
+            # IG API'nin gerektirdiği gibi mesafeleri hesapla
+            # BUY işleminde stop giriş fiyatının altında, limit üstünde olmalı
+            final_stop_distance = common_distance
+            final_limit_distance = common_distance
+            
+            # Seviyeleri de hesaplayalım (log için)
+            if trade_params['direction'] == 'BUY':
+                # Alış (BUY) işleminde stop aşağıda, limit yukarıda olur
+                expected_stop_level = limit_level - common_distance
+                expected_limit_level = limit_level + common_distance
+            else:
+                # Satış (SELL) işleminde stop yukarıda, limit aşağıda olur
+                expected_stop_level = limit_level + common_distance
+                expected_limit_level = limit_level - common_distance
+                
+            logger.info(f"Beklenen seviyeler: Stop={expected_stop_level}, Limit={expected_limit_level}")
+            logger.info(f"Hesaplanan mesafeler: Stop={final_stop_distance}, Limit={final_limit_distance}")
+            
+            # ADIM 5: Tüm bilgileri logla
             price_info = {
                 "original_price": original_price,
                 "calculated_price_level": price_level,
@@ -225,7 +264,19 @@ class TradeManager:
                 "final_limit_level": limit_level,
                 "ig_current_price": current_price,
                 "ig_bid_price": bid_price,
-                "ig_offer_price": offer_price
+                "ig_offer_price": offer_price,
+                "original_stop_distance": min_stop_distance,
+                "original_limit_distance": min_stop_distance,
+                "calculated_stop_distance": final_stop_distance,
+                "calculated_limit_distance": final_limit_distance,
+                "min_stop_distance": min_stop_distance,
+                "price_based_min_distance": price_based_min_distance,
+                "effective_min_distance": effective_min_distance,
+                "common_distance": common_distance,
+                "stop_level": expected_stop_level,
+                "limit_level": expected_limit_level,
+                "final_stop_distance": final_stop_distance,
+                "final_limit_distance": final_limit_distance
             }
             
             logger.info(f"Fiyat dönüştürme bilgileri: {json.dumps(price_info)}")
@@ -235,20 +286,18 @@ class TradeManager:
             logger.info(f"TradingView fiyatı: {original_price}, Hesaplanan Fiyat Seviyesi: {price_level}")
             logger.info(f"IG Formatında Limit Seviyesi: {limit_level}")
             logger.info(f"Yön: {trade_params['direction']}, Boyut: {trade_params['position_size']}")
-            logger.info(f"Stop Distance: {trade_params['stop_distance']}, Limit Distance: {trade_params['limit_distance']}")
+            logger.info(f"Stop Distance: {final_stop_distance}")
+            logger.info(f"Limit Distance: {final_limit_distance}")
             
-            # Stop ve limit mesafelerini orijinal değerlerinde bırak - bunları dönüştürme
-            stop_distance = trade_params['stop_distance']
-            limit_distance = trade_params['limit_distance']
-            
-            # Pozisyon oluştur - SADECE GİRİŞ FİYATI dönüştürülmüş, diğer değerler orijinal
+            # ADIM 6: Pozisyon oluştur
+            # IG API mesafeleri (distance) kullanıyor seviyeler (level) değil
             result = self.ig_client.create_position(
                 epic=epic,
                 direction=trade_params['direction'],
                 size=trade_params['position_size'],
-                limit_level=limit_level,
-                limit_distance=limit_distance,
-                stop_distance=stop_distance,
+                limit_level=limit_level,  # Giriş fiyatı
+                limit_distance=final_limit_distance,  # Take profit mesafesi
+                stop_distance=final_stop_distance,  # Stop loss mesafesi
                 use_limit_order=True
             )
             
@@ -275,8 +324,8 @@ class TradeManager:
                     "original_price": original_price,
                     "current_ig_price": current_price,
                     "size": trade_params['position_size'],
-                    "stop_distance": stop_distance,
-                    "limit_distance": limit_distance,
+                    "stop_distance": final_stop_distance,
+                    "limit_distance": final_limit_distance,
                     "order_type": "LIMIT"
                 }
             else:
