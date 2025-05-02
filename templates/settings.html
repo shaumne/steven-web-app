@@ -112,6 +112,9 @@
                         <button class="btn btn-sm btn-success" id="uploadNewData">
                             <i class="bi bi-upload"></i> Upload New Data
                         </button>
+                        <button class="btn btn-sm btn-info" id="updateDividendDates">
+                            <i class="bi bi-calendar"></i> Update Dividend Dates
+                        </button>
                     </div>
                 </div>
                 <div class="card-body">
@@ -131,6 +134,7 @@
                                     <th>ATR PT Period</th>
                                     <th>ATR PT Multiple</th>
                                     <th>Max Position Size</th>
+                                    <th>Next Dividend Date</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -143,6 +147,7 @@
                                     <td>{{ row['ATR Profit Target Period'] }}</td>
                                     <td>{{ row['ATR Profit Multiple'] }}</td>
                                     <td>{{ row['Postion Size Max GBP'] }}</td>
+                                    <td>{{ row['Next dividend date'] if row['Next dividend date'] else 'No data' }}</td>
                                 </tr>
                                 {% endfor %}
                             </tbody>
@@ -231,6 +236,45 @@
     // Refresh ticker data
     document.getElementById('refreshTickerData').addEventListener('click', function() {
         window.location.reload();
+    });
+    
+    // Update dividend dates
+    document.getElementById('updateDividendDates').addEventListener('click', function() {
+        console.log("Update dividend dates button clicked"); // Debug için log ekliyoruz
+        if (confirm('Do you want to update dividend dates from Yahoo Finance? This may take a few minutes.')) {
+            // Show a loading indicator
+            this.innerHTML = '<i class="bi bi-hourglass-split"></i> Updating...';
+            this.disabled = true;
+            
+            console.log("Making AJAX request to /api/update_dividend_dates"); // Başka bir debug log
+            
+            // Make API request
+            $.ajax({
+                url: '/api/update_dividend_dates',
+                type: 'POST',
+                success: function(response) {
+                    console.log("AJAX Success:", response); // Başarılı cevap logu
+                    if (response.status === 'success') {
+                        alert('Dividend dates updated successfully!');
+                        window.location.reload();
+                    } else {
+                        alert('Failed to update dividend dates: ' + response.message);
+                    }
+                },
+                error: function(xhr, status, error) {
+                    console.error("AJAX Error:", status, error); // Hata logu
+                    console.error("Response:", xhr.responseText); // Yanıt detayı
+                    alert('Error updating dividend dates. Please check the server logs.');
+                },
+                complete: function() {
+                    console.log("AJAX request complete"); // Tamamlama logu
+                    // Restore button state
+                    const button = document.getElementById('updateDividendDates');
+                    button.innerHTML = '<i class="bi bi-calendar"></i> Update Dividend Dates';
+                    button.disabled = false;
+                }
+            });
+        }
     });
     
     // Initialize DataTable for ticker data

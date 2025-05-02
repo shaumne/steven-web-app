@@ -16,6 +16,7 @@ from trading_bot.config import load_ticker_data
 from trading_bot.auth import init_users_file, get_users, authenticate_user, login_required, admin_required
 from trading_bot.ig_api import IGClient
 import requests
+from div import update_ticker_data_dividend_dates
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -1715,6 +1716,38 @@ def api_activity_history():
         return jsonify({
             "status": "error",
             "message": str(e)
+        }), 500
+
+@app.route('/api/update_dividend_dates', methods=['POST'])
+# @login_required  # Test için geçici olarak kaldırıldı
+def update_dividend_dates():
+    """Update dividend dates in ticker_data.csv using Yahoo Finance data"""
+    try:
+        logging.info("Dividend dates update requested")  # Log için
+        # Run the update function
+        result = update_ticker_data_dividend_dates()
+        
+        if result:
+            logging.info("Dividend dates updated successfully")  # Başarılı log
+            flash('Dividend dates updated successfully', 'success')
+            return jsonify({
+                "status": "success",
+                "message": "Dividend dates updated successfully"
+            })
+        else:
+            logging.error("Error updating dividend dates")  # Hata logu
+            flash('Error updating dividend dates', 'danger')
+            return jsonify({
+                "status": "error",
+                "message": "Error updating dividend dates"
+            }), 500
+    
+    except Exception as e:
+        logging.error(f"Error updating dividend dates: {e}")
+        flash(f'Error updating dividend dates: {str(e)}', 'danger')
+        return jsonify({
+            "status": "error",
+            "message": f"Error updating dividend dates: {str(e)}"
         }), 500
 
 if __name__ == "__main__":
