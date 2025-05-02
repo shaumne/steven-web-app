@@ -116,27 +116,26 @@ class TradeCalculator:
             atr_sl_period = int(ticker_row['ATR Stop Loss Period'].values[0])
             atr_tp_period = int(ticker_row['ATR Profit Target Period'].values[0])
             
-            # Get multipliers
-            atr_sl_multiple = float(ticker_row['ATR Stop Loss Multiple'].values[0])
-            atr_tp_multiple = float(ticker_row['ATR Profit Multiple'].values[0])
+            # Get multipliers from CSV
+            atr_sl_multiple = float(ticker_row['ATR Stop Loss Multiple'].values[0]) / 100.0  # CSV'deki değer % olarak
+            atr_tp_multiple = float(ticker_row['ATR Profit Multiple'].values[0]) / 100.0    # CSV'deki değer % olarak
             
             # Get max position size
             max_position_size_gbp = float(ticker_row['Postion Size Max GBP'].values[0])
+            
+            # CSV'den Opening Price Multiple değerini al
+            opening_price_multiple = float(ticker_row['Opening Price Multiple'].values[0]) / 100.0  # CSV'deki değer % olarak (96-104 arası)
             
             # Her zaman orijinal fiyatı sakla
             original_price = opening_price
             
             # Fiyat seviyesi hesaplama:
-            # DOWN (BUY) için fiyatı %2 düşür (98%)
-            # UP (SELL) için fiyatı %2 artır (102%)
-            if direction == "DOWN":
-                # Fiyat seviyesi, orijinal fiyatın %98'i olacak
-                price_level = original_price * 0.98
-                logger.info(f"Calculated price level for DOWN direction: {price_level} (98% of {original_price})")
-            else:  # UP direction (SELL)
-                # Fiyat seviyesi, orijinal fiyatın %102'si olacak
-                price_level = original_price * 1.02
-                logger.info(f"Calculated price level for UP direction: {price_level} (102% of {original_price})")
+            # Direction DOWN (BUY) için fiyatı çarpanla çarp (96-100 arası değerler için düşürme, 100 için aynı, 100-104 arası için artırma)
+            # Direction UP (SELL) için de aynı çarpanı kullan
+            # Örn: DOWN ve 98 çarpanı için fiyatı %98'e düşür, UP ve 102 çarpanı için fiyatı %102'ye çıkar
+            price_level = original_price * opening_price_multiple
+            
+            logger.info(f"Calculated price level for {direction} direction: {price_level} ({opening_price_multiple*100}% of {original_price}, using CSV Opening Price Multiple)")
             
             # Normalize price if IG price is provided (API için kullanılacak)
             entry_price = price_level
@@ -165,11 +164,55 @@ class TradeCalculator:
                 logger.warning(f"ATR Take Profit value is zero or negative: {atr_tp}. Using default 2% of price.")
                 atr_tp = 0.02 * original_price
             
-            # Calculate stop loss distance - ATR stop 3 için 336% (3.36x)
-            stop_distance = atr_sl * 3.36
+            # CSV'den gelen çarpanlarla Stop Loss ve Take Profit hesapla
+            stop_distance = atr_sl * atr_sl_multiple
+            limit_distance = atr_tp * atr_tp_multiple
             
-            # Calculate take profit distance - ATR profit 7 için 246% (2.46x)
-            limit_distance = atr_tp * 2.46
+            # Log hesaplanan değerleri
+            logger.info(f"Raw stop_distance before normalization: {stop_distance} (ATR {atr_sl} * {atr_sl_multiple})")
+            logger.info(f"Raw limit_distance before normalization: {limit_distance} (ATR {atr_tp} * {atr_tp_multiple})")
+            
+            # Stop ve limit mesafelerinin makul sınırlar içinde olmasını sağla
+            # Maximum değerleri kontrol et - çok büyük değerler IG tarafından reddedilebilir
+            MAX_STOP_PERCENT = 0.15   # Fiyatın maksimum %15'i
+            MAX_LIMIT_PERCENT = 0.20  # Fiyatın maksimum %20'si
+            
+            max_stop_distance = price_level * MAX_STOP_PERCENT
+            max_limit_distance = price_level * MAX_LIMIT_PERCENT
+            
+            if stop_distance > max_stop_distance:
+                logger.warning(f"Stop distance {stop_distance} is too large (>{max_stop_distance}). Limiting to {max_stop_distance}")
+                stop_distance = max_stop_distance
+                
+            if limit_distance > max_limit_distance:
+                logger.warning(f"Limit distance {limit_distance} is too large (>{max_limit_distance}). Limiting to {max_limit_distance}")
+                limit_distance = max_limit_distance
+            
+            # Eğer ig_price mevcutsa, stop ve limit mesafelerini de normalize et
+            if ig_price is not None:
+                # IG fiyatı ve TV fiyatı formatı arasında fark varsa ölçeklendirme faktörünü hesapla
+                price_format_multiplier = 1.0
+                
+                if ig_price > 0 and price_level > 0:
+                    # Ondalık basamak farkını bul
+                    ig_digits = len(str(int(ig_price)))
+                    tv_digits = len(str(int(price_level)))
+                    digit_diff = ig_digits - tv_digits
+                    
+                    if abs(digit_diff) >= 2:
+                        # Format farkı var - ölçeklendirme faktörünü belirle
+                        price_format_multiplier = 10 ** digit_diff
+                        logger.info(f"Price format multiplier: {price_format_multiplier} (based on {ig_digits}-{tv_digits}={digit_diff} digits)")
+                
+                # Mesafeleri ölçeklendir
+                normalized_stop = stop_distance * price_format_multiplier
+                normalized_limit = limit_distance * price_format_multiplier
+                
+                logger.info(f"Normalized stop_distance: {normalized_stop} (raw: {stop_distance} * {price_format_multiplier})")
+                logger.info(f"Normalized limit_distance: {normalized_limit} (raw: {limit_distance} * {price_format_multiplier})")
+                
+                stop_distance = normalized_stop
+                limit_distance = normalized_limit
             
             # Stop ve limit mesafesi minimum değer kontrolü
             MIN_DISTANCE = 0.001 * price_level  # Fiyatın en az %0.1'i
@@ -182,23 +225,38 @@ class TradeCalculator:
                 limit_distance = MIN_DISTANCE
             
             # Calculate position size based on price_level (not original_price)
-            # Pozisyon büyüklüğü hesaplama: max_position_size_gbp / price_level
-            position_size = max(0.85, round(max_position_size_gbp / price_level, 2))
+            # Pozisyon büyüklüğü: max_position_size_gbp / price_level
+            position_size_raw = max_position_size_gbp / price_level
+            logger.info(f"Raw position size calculation: {max_position_size_gbp} GBP / {price_level} = {position_size_raw}")
             
-            # Pozisyon büyüklüğünü sınırla - çok büyük emirler reddedilebilir
-            MAX_SAFE_POSITION_SIZE = 40.0
-            if position_size > MAX_SAFE_POSITION_SIZE:
-                logger.warning(f"Position size {position_size} is too large. Limiting to {MAX_SAFE_POSITION_SIZE}")
-                position_size = MAX_SAFE_POSITION_SIZE
+            # IG Markets için doğru pozisyon boyutu formatı
+            # Yüksek fiyatlı hisseler (100+ gibi) için 10000 GBP'lik pozisyon açmak için küçük bir pozisyon boyutu gerekir (ör: 6.38)
+            # ÖNEMLİ: IG API ile format uyumsuzluğunu gidermek için normalize edilecek değer
+            if ig_price is not None and ig_price > 100 and entry_price > 100:
+                # Yüksek fiyatlı hisseler için (100+) - IG API formatı ile uyumlu hesaplama
+                position_size = round(position_size_raw / 100, 1)  # Sadece 1 ondalık basamak - IG API sınırlaması
+                
+                # Eğer hesaplanan değer çok büyükse (>10), fiyat formatında sorun olabilir
+                if position_size > 10:
+                    # Format sorunu olabilir, normal hesaplamayı dene
+                    position_size = round(position_size_raw, 1)  # Sadece 1 ondalık basamak
+                    
+                logger.info(f"High price stock: position size calculation for IG API: {position_size}")
+            else:
+                # Normal fiyatlı hisseler için
+                position_size = max(0.85, round(position_size_raw, 1))  # Sadece 1 ondalık basamak
+                logger.info(f"Normal price stock: using regular size format: {position_size}")
             
             # Log all parameters for easier debugging
             logger.info(f"Trade parameters for {ticker}:")
             logger.info(f"Original TV Price: {original_price}, Calculated Price Level: {price_level}")
             logger.info(f"Entry Price (normalized): {entry_price}")
-            logger.info(f"Position Size: {position_size} (calculated using price level: {price_level})")
-            logger.info(f"Stop Distance: {stop_distance}")
-            logger.info(f"Limit Distance: {limit_distance}")
+            logger.info(f"Direction: {direction}, Trade Direction: {trade_direction}")
+            logger.info(f"Raw Position Size Calc: {position_size_raw}, Final Position Size: {position_size}")
+            logger.info(f"ATR SL Period: {atr_sl_period}, Multiple: {atr_sl_multiple}")
+            logger.info(f"ATR TP Period: {atr_tp_period}, Multiple: {atr_tp_multiple}")
             logger.info(f"ATR Values - Stop: {atr_sl}, Take Profit: {atr_tp}")
+            logger.info(f"Raw Stop Distance: {stop_distance}, Raw Limit Distance: {limit_distance}")
             
             # Return the trade parameters
             return {
@@ -207,8 +265,8 @@ class TradeCalculator:
                 'original_price': round(original_price, 4),  # TradingView'dan gelen orijinal fiyat
                 'price_level': round(price_level, 4),        # Hesaplanan gerçek fiyat seviyesi (DOWN için %98)
                 'entry_price': round(entry_price, 4),        # Normalize edilmiş fiyat
-                'stop_distance': round(stop_distance, 4),
-                'limit_distance': round(limit_distance, 4),
+                'stop_distance': round(stop_distance, 1),    # 1 ondalık basamak için yuvarlanmış
+                'limit_distance': round(limit_distance, 1),  # 1 ondalık basamak için yuvarlanmış
                 'position_size': position_size,
                 'max_position_size_gbp': max_position_size_gbp
             }

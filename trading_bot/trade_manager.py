@@ -203,56 +203,76 @@ class TradeManager:
             original_price = trade_params['original_price']
             price_level = trade_params['price_level']
             
-            # ADIM 1: Fiyat formatı dönüşümü
-            # IG ile TradingView arasındaki fiyat formatı farkını hesapla
-            ig_format_multiplier = 1
+            # IG fiyatı ve TV fiyatı formatı arasında fark varsa ölçeklendirme faktörünü hesapla
+            ig_format_multiplier = 1.0
             
             if current_price > 0 and price_level > 0:
-                # Basamak sayısı farkını kontrol et
+                # Ondalık basamak farkını bul - önemli bir format farkı varsa bu sayıları ölçeklendirmemiz gerekiyor
                 ig_digits = len(str(int(current_price)))
                 tv_digits = len(str(int(price_level)))
-                
-                # 2 veya daha fazla basamak farkı varsa bu bir formatlama farkıdır
                 digit_diff = ig_digits - tv_digits
-                if digit_diff >= 2:
+                
+                if abs(digit_diff) >= 2:
+                    # Format farkı var - ölçeklendirme faktörünü belirle
                     ig_format_multiplier = 10 ** digit_diff
-                    logger.info(f"IG fiyat formatı TradingView'den farklı: {digit_diff} basamak farkı tespit edildi")
-                    logger.info(f"Fiyat ölçeklendirme çarpanı: {ig_format_multiplier}")
+                    logger.info(f"IG Format multiplier: {ig_format_multiplier} (based on IG:{ig_digits} - TV:{tv_digits} = {digit_diff} digits)")
+                else:
+                    logger.info(f"No significant format difference detected between IG price ({current_price}) and TV price level ({price_level})")
             
             # ADIM 2: Giriş fiyatını IG formatına dönüştür
             ig_formatted_level = price_level * ig_format_multiplier
             limit_level = round(ig_formatted_level, 4)
+            logger.info(f"IG formatted level: {ig_formatted_level} (TV price {price_level} * {ig_format_multiplier})")
             
             # ADIM 3: Stop loss ve limit mesafelerini hesapla
             # Öncelikle trade_calculator'dan gelen orijinal hesaplamaları alalım
             original_stop_distance = trade_params['stop_distance']
             original_limit_distance = trade_params['limit_distance']
             
-            # IG API'nin kabul ettiği değerleri anlamak için başarılı işlem örneğini kullanalım
-            # Fiyat bazlı minimum mesafe (fiyatın %0.5'i)
-            price_based_min_distance = current_price * 0.005
+            # Log orijinal değerleri
+            logger.info(f"Original calculator values - Stop: {original_stop_distance}, Limit: {original_limit_distance}")
             
-            # IG API'den gelen min_stop_distance ile price_based'den büyük olanı kullan
-            effective_min_distance = max(min_stop_distance, price_based_min_distance)
+            # ÖNEMLİ - YÜKSEK FİYATLI HİSSELER İÇİN IG API'YE GÖNDERME FORMATI
+            # Her şeyin aynı ölçekte olduğundan emin olalım
+            # Yüksek fiyatlar için IG'nin API'sinde format farkı var, bu farkı düzeltiyoruz
             
-            # Ortak mesafeyi yuvarla (daha düzgün rakamlar için)
-            common_distance = round(effective_min_distance, 2)  
-            logger.info(f"Hesaplanan ortak mesafe: {common_distance}")
-            
-            # ATR hesaplamaları sonucu elde edilen mesafeleri kullan
-            # Eğer çok küçüklerse, minimum mesafe değeri kullan
-            final_stop_distance = original_stop_distance
-            final_limit_distance = original_limit_distance
-            
-            # ATR hesaplanan mesafeler çok küçükse minimum değerleri kullan
-            if final_stop_distance < common_distance:
-                logger.warning(f"Stop distance ({final_stop_distance}) minimum değerden ({common_distance}) küçük. Minimum değer kullanılıyor.")
-                final_stop_distance = common_distance
+            # Önce format düzeltmesi uyguluyoruz
+            if current_price >= 100 and limit_level >= 100:
+                # Yüksek fiyatlı hisse - stop/limit değerlerini normalize et
+                final_stop_distance = original_stop_distance  # Zaten doğru formatta
+                final_limit_distance = original_limit_distance  # Zaten doğru formatta
                 
-            if final_limit_distance < common_distance:
-                logger.warning(f"Limit distance ({final_limit_distance}) minimum değerden ({common_distance}) küçük. Minimum değer kullanılıyor.")
-                final_limit_distance = common_distance
+                # Mesafe değerlerinin fiyat ile uyumlu olduğundan emin ol
+                price_ratio = current_price / limit_level
+                if abs(price_ratio - 1.0) > 0.1:  # Fiyat oranı %10'dan fazla farklıysa
+                    logger.warning(f"Price ratio {price_ratio} indicates format mismatch, adjusting distances")
+                    final_stop_distance = original_stop_distance * price_ratio
+                    final_limit_distance = original_limit_distance * price_ratio
                 
+                logger.info(f"High price stock - using direct distance values: Stop={final_stop_distance}, Limit={final_limit_distance}")
+            else:
+                # Normal fiyat aralığı - ölçeklendirme gerekiyorsa uygula
+                if ig_format_multiplier != 1.0:
+                    final_stop_distance = original_stop_distance * ig_format_multiplier
+                    final_limit_distance = original_limit_distance * ig_format_multiplier
+                    logger.info(f"Scaled distances - Stop: {final_stop_distance}, Limit: {final_limit_distance}")
+                else:
+                    final_stop_distance = original_stop_distance
+                    final_limit_distance = original_limit_distance
+                    logger.info(f"No scaling needed for distances, using original values")
+            
+            # Minimum mesafeyi kontrol et - IG API'nin kabul edeceği minimum mesafe
+            min_distance = max(min_stop_distance, current_price * 0.001)  # Fiyatın en az %0.1'i veya API min değeri
+            
+            # Mesafelerin çok küçük olmamasını sağla - sadece gerçekten çok küçükse minimum değeri kullan
+            if final_stop_distance < min_distance:
+                logger.warning(f"Stop distance ({final_stop_distance}) too small. Using: {min_distance}")
+                final_stop_distance = min_distance
+                
+            if final_limit_distance < min_distance:
+                logger.warning(f"Limit distance ({final_limit_distance}) too small. Using: {min_distance}")
+                final_limit_distance = min_distance
+                                
             # BUY/SELL işlemlerinde beklenen seviyeleri göstermek için log
             # BUY (DOWN): Giriş fiyatı = orijinal fiyat * 0.98 (fiyatın %2 altı)
             # SELL (UP): Giriş fiyatı = orijinal fiyat * 1.02 (fiyatın %2 üstü)
@@ -267,6 +287,16 @@ class TradeManager:
                 
             logger.info(f"Beklenen seviyeler: Stop={expected_stop_level}, Limit={expected_limit_level}")
             logger.info(f"Hesaplanan mesafeler: Stop={final_stop_distance} (original: {original_stop_distance}), Limit={final_limit_distance} (original: {original_limit_distance})")
+            
+            # Format sorununu çözmek için son bir kontrol
+            # eğer limitDistance ya da stopDistance çok büyükse bunları düzelt
+            if final_stop_distance > 1000:
+                logger.warning(f"Stop distance {final_stop_distance} is too large, reducing by factor of 100")
+                final_stop_distance = final_stop_distance / 100
+            
+            if final_limit_distance > 1000:
+                logger.warning(f"Limit distance {final_limit_distance} is too large, reducing by factor of 100")
+                final_limit_distance = final_limit_distance / 100
             
             # ADIM 5: Tüm bilgileri logla
             price_info = {
@@ -283,13 +313,8 @@ class TradeManager:
                 "calculated_stop_distance": final_stop_distance,
                 "calculated_limit_distance": final_limit_distance,
                 "min_stop_distance": min_stop_distance,
-                "price_based_min_distance": price_based_min_distance,
-                "effective_min_distance": effective_min_distance,
-                "common_distance": common_distance,
                 "stop_level": expected_stop_level,
-                "limit_level": expected_limit_level,
-                "final_stop_distance": final_stop_distance,
-                "final_limit_distance": final_limit_distance
+                "limit_level": expected_limit_level
             }
             
             logger.info(f"Fiyat dönüştürme bilgileri: {json.dumps(price_info)}")
@@ -304,10 +329,46 @@ class TradeManager:
             
             # ADIM 6: Pozisyon oluştur
             # IG API mesafeleri (distance) kullanıyor seviyeler (level) değil
+            
+            # *** SON KONTROL ***
+            # Değerlerin makul aralıklarda olduğundan emin olalım
+            position_size = trade_params['position_size']
+            
+            # Yüksek fiyatlı hisse kontrolü
+            if limit_level > 100:
+                # Bu bir yüksek fiyatlı hisse - pozisyon boyutu ve mesafeler kontrol edilmeli
+                # 6.38 gibi değerler makul - 638 gibi değerler çok büyük
+                if position_size > 100:
+                    logger.warning(f"Position size {position_size} seems too large for high-priced stock. Dividing by 100")
+                    position_size = position_size / 100
+                
+                # BATS:GNE için ATR hesaplamaları:
+                # Stop: ATR9 (0.576) * 2.54 = 1.46304 → 146.3
+                # Limit: ATR10 (0.577) * 1.57 = 0.90589 → 90.59
+                
+                # Çok büyük değerleri düzelt (son güvenlik kontrolü)
+                if final_stop_distance > 1000:
+                    logger.warning(f"Final check: Stop distance {final_stop_distance} is too large, dividing by 100")
+                    final_stop_distance = final_stop_distance / 100
+                
+                if final_limit_distance > 1000:
+                    logger.warning(f"Final check: Limit distance {final_limit_distance} is too large, dividing by 100")
+                    final_limit_distance = final_limit_distance / 100
+            
+            # IG API için değerleri formatla
+            # IG API fazla ondalık basamak kabul etmiyor - size, stop_distance ve limit_distance değerlerini yuvarlayalım
+            position_size = round(position_size, 1)  # Sadece 1 ondalık basamak
+            final_stop_distance = round(final_stop_distance, 1)  # Sadece 1 ondalık basamak
+            final_limit_distance = round(final_limit_distance, 1)  # Sadece 1 ondalık basamak
+            
+            # Son durumu logla
+            logger.info(f"FINAL VALUES - Size: {position_size}, Stop: {final_stop_distance}, Limit: {final_limit_distance}")
+            
+            # API çağrısını yap
             result = self.ig_client.create_position(
                 epic=epic,
                 direction=trade_params['direction'],
-                size=trade_params['position_size'],
+                size=position_size,
                 limit_level=limit_level,  # Giriş fiyatı
                 limit_distance=final_limit_distance,  # Take profit mesafesi
                 stop_distance=final_stop_distance,  # Stop loss mesafesi
@@ -336,7 +397,7 @@ class TradeManager:
                     "entry_price": limit_level,
                     "original_price": original_price,
                     "current_ig_price": current_price,
-                    "size": trade_params['position_size'],
+                    "size": position_size,
                     "stop_distance": final_stop_distance,
                     "limit_distance": final_limit_distance,
                     "order_type": "LIMIT"

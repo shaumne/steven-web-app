@@ -274,7 +274,7 @@ class IGClient:
         if max_results > 100:
             max_results = 100
             logger.info(f"Limiting pageSize to maximum allowed value: 100")
-            
+        
         # Set default dates if not provided
         if from_date is None:
             from_date = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
@@ -437,7 +437,7 @@ class IGClient:
         """
         if not self._ensure_session():
             return None
-        
+            
         url = f"{self.BASE_URL}/markets/{epic}"
         
         # Version başlığını ayarla
@@ -448,17 +448,17 @@ class IGClient:
             response = self.session.get(url, headers=headers)
             
             if response.status_code == 200:
-                data = response.json()
-                
-                # Extract relevant details
                 try:
+                    data = response.json()
+                    
+                    # Extract relevant details
                     snapshot = data.get('snapshot', {})
                     dealing_rules = data.get('dealingRules', {})
-                    
+                
                     # Get bid/offer prices
                     bid = snapshot.get('bid')
                     offer = snapshot.get('offer')
-                    
+                
                     # Calculate the current price as the midpoint
                     if bid is not None and offer is not None:
                         current_price = (bid + offer) / 2
@@ -483,7 +483,6 @@ class IGClient:
                         'min_stop_distance': dealing_rules.get('minNormalStopOrLimitDistance', {}).get('value', 0),
                         'min_limit_distance': dealing_rules.get('minControlledRiskStopDistance', {}).get('value', 0)
                     }
-                    
                 except Exception as e:
                     logger.error(f"Error parsing market details for {epic}: {e}")
                     return None
