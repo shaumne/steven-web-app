@@ -273,9 +273,8 @@ class TradeManager:
                 logger.warning(f"Limit distance ({final_limit_distance}) too small. Using: {min_distance}")
                 final_limit_distance = min_distance
                                 
-            # BUY/SELL işlemlerinde beklenen seviyeleri göstermek için log
-            # BUY (DOWN): Giriş fiyatı = orijinal fiyat * 0.98 (fiyatın %2 altı)
-            # SELL (UP): Giriş fiyatı = orijinal fiyat * 1.02 (fiyatın %2 üstü)
+            # BUY/SELL işlemlerinde beklenen seviyeleri hesapla
+            # Her iki işlem için de API'ye MESAFE değerlerini (pozitif) gönder, API kendisi seviyeleri hesaplar
             if trade_params['direction'] == 'BUY':
                 # Alış (BUY) işleminde stop aşağıda, limit yukarıda olur
                 expected_stop_level = limit_level - final_stop_distance
@@ -287,6 +286,11 @@ class TradeManager:
                 
             logger.info(f"Beklenen seviyeler: Stop={expected_stop_level}, Limit={expected_limit_level}")
             logger.info(f"Hesaplanan mesafeler: Stop={final_stop_distance} (original: {original_stop_distance}), Limit={final_limit_distance} (original: {original_limit_distance})")
+            
+            # IG API her zaman pozitif mesafe değeri bekler
+            # Değerler pozitif olmalı, yönlendirmeyi API kendisi yapar
+            final_stop_distance = abs(final_stop_distance)
+            final_limit_distance = abs(final_limit_distance)
             
             # Format sorununu çözmek için son bir kontrol
             # eğer limitDistance ya da stopDistance çok büyükse bunları düzelt
@@ -334,26 +338,35 @@ class TradeManager:
             # Değerlerin makul aralıklarda olduğundan emin olalım
             position_size = trade_params['position_size']
             
+            # Örneğin Serco için işlem boyutu doğrulaması:
+            # entry_price = 176.851, position_size = 56.5
+            # 176.851 * 56.5 = 9992 GBP (yaklaşık 10000 GBP'lik pozisyon)
+            # Bu durumda işlem boyutu doğru ve ayarlanmamalı
+            trade_value_gbp = limit_level * position_size
+            logger.info(f"Trade value check: {limit_level} * {position_size} = £{trade_value_gbp:.2f}")
+            
+            # İşlem değeri makul sınırlar içinde olmalı (genelde 5000-15000 GBP arası)
+            MAX_EXPECTED_TRADE_VALUE = 15000  # £15,000 maksimum
+            
             # Yüksek fiyatlı hisse kontrolü
-            if limit_level > 100:
-                # Bu bir yüksek fiyatlı hisse - pozisyon boyutu ve mesafeler kontrol edilmeli
-                # 6.38 gibi değerler makul - 638 gibi değerler çok büyük
-                if position_size > 100:
-                    logger.warning(f"Position size {position_size} seems too large for high-priced stock. Dividing by 100")
-                    position_size = position_size / 100
+            if limit_level > 100 and trade_value_gbp > MAX_EXPECTED_TRADE_VALUE:
+                # Bu bir yüksek fiyatlı hisse ve pozisyon değeri çok büyük
+                # Pozisyon boyutunu düşür
+                adjusted_size = round(MAX_EXPECTED_TRADE_VALUE / limit_level, 1)
+                logger.warning(f"Position value {trade_value_gbp} is too large. Adjusting size from {position_size} to {adjusted_size}")
+                position_size = adjusted_size
+            
+            # Mesafelerin doğru ölçekte olduğunu kontrol et
+            # Eğer limit fiyatının %10'undan büyükse, muhtemelen ölçekleme sorunu var
+            max_reasonable_distance = limit_level * 0.1  # Fiyatın %10'u
+            
+            if final_stop_distance > max_reasonable_distance:
+                logger.warning(f"Stop distance {final_stop_distance} is suspiciously large (>{max_reasonable_distance}). Adjusting.")
+                final_stop_distance = round(final_stop_distance / 100, 1)
                 
-                # BATS:GNE için ATR hesaplamaları:
-                # Stop: ATR9 (0.576) * 2.54 = 1.46304 → 146.3
-                # Limit: ATR10 (0.577) * 1.57 = 0.90589 → 90.59
-                
-                # Çok büyük değerleri düzelt (son güvenlik kontrolü)
-                if final_stop_distance > 1000:
-                    logger.warning(f"Final check: Stop distance {final_stop_distance} is too large, dividing by 100")
-                    final_stop_distance = final_stop_distance / 100
-                
-                if final_limit_distance > 1000:
-                    logger.warning(f"Final check: Limit distance {final_limit_distance} is too large, dividing by 100")
-                    final_limit_distance = final_limit_distance / 100
+            if final_limit_distance > max_reasonable_distance:
+                logger.warning(f"Limit distance {final_limit_distance} is suspiciously large (>{max_reasonable_distance}). Adjusting.")
+                final_limit_distance = round(final_limit_distance / 100, 1)
             
             # IG API için değerleri formatla
             # IG API fazla ondalık basamak kabul etmiyor - size, stop_distance ve limit_distance değerlerini yuvarlayalım

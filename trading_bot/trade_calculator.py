@@ -45,10 +45,21 @@ class TradeCalculator:
         """
         TradingView fiyatını IG formatına çevir
         """
-        # Fiyat formatını düzeltme kontrolü
-        # Bazı coinlerde IG fiyatı 12430.0 iken TradingView'den 124.3 gibi gelir
-        # Bu durumu tespit et ve ölçeklendir
+        # Bazı durumlarda fiyat formatları arasında büyük fark olabilir
+        # Örneğin: BATS:GNE için TV'de 15.40, IG'de 1540.0 olabilir
+        
         if ig_price is not None and ig_price > 0 and tv_price > 0:
+            # Önce doğrudan oran kontrolü yapalım
+            price_ratio = ig_price / tv_price
+            
+            # Eğer oran çok büyükse (örn: 50x veya daha fazla), direkt çarpanı kullan
+            if price_ratio >= 50 and price_ratio <= 150:
+                # Muhtemelen 100x fark var (örn: 15.40 -> 1540.0)
+                normalized = float(tv_price) * 100.0
+                logger.info(f"High price ratio detected: {price_ratio:.1f}x. Applying 100x multiplier. {tv_price} -> {normalized}")
+                return normalized
+            
+            # Standart basamak farkı kontrolü
             ig_digits = len(str(int(ig_price)))
             tv_digits = len(str(int(tv_price)))
             
@@ -58,12 +69,12 @@ class TradeCalculator:
             if digit_diff >= 2:
                 # IG fiyatı daha fazla basamaklı - çarparak normalize et
                 normalized = float(tv_price) * (10 ** digit_diff)
-                logger.info(f"Price normalization for crypto/coin: TV={tv_price} ({tv_digits} digits) -> IG={ig_price} ({ig_digits} digits), multiplier=1e{digit_diff}, result={normalized}")
+                logger.info(f"Price normalization: TV={tv_price} ({tv_digits} digits) -> IG={ig_price} ({ig_digits} digits), multiplier=1e{digit_diff}, result={normalized}")
                 return normalized
             elif digit_diff <= -2:
                 # TradingView fiyatı daha fazla basamaklı - bölerek normalize et
                 normalized = float(tv_price) / (10 ** abs(digit_diff))
-                logger.info(f"Price normalization for crypto/coin: TV={tv_price} ({tv_digits} digits) -> IG={ig_price} ({ig_digits} digits), divider=1e{abs(digit_diff)}, result={normalized}")
+                logger.info(f"Price normalization: TV={tv_price} ({tv_digits} digits) -> IG={ig_price} ({ig_digits} digits), divider=1e{abs(digit_diff)}, result={normalized}")
                 return normalized
             else:
                 # Basamak farkı az - normal hesaplama yap
@@ -130,12 +141,15 @@ class TradeCalculator:
             original_price = opening_price
             
             # Fiyat seviyesi hesaplama:
-            # Direction DOWN (BUY) için fiyatı çarpanla çarp (96-100 arası değerler için düşürme, 100 için aynı, 100-104 arası için artırma)
-            # Direction UP (SELL) için de aynı çarpanı kullan
-            # Örn: DOWN ve 98 çarpanı için fiyatı %98'e düşür, UP ve 102 çarpanı için fiyatı %102'ye çıkar
-            price_level = original_price * opening_price_multiple
+            # Direction DOWN (BUY) için fiyatı çarpana BÖL (96-100 arası değerler için artırma, 100 için aynı, 100-104 arası için azaltma)
+            # Direction UP (SELL) için fiyatı çarpanla ÇARP (96-100 arası değerler için azaltma, 100 için aynı, 100-104 arası için artırma)
             
-            logger.info(f"Calculated price level for {direction} direction: {price_level} ({opening_price_multiple*100}% of {original_price}, using CSV Opening Price Multiple)")
+            if direction == "DOWN":  # BUY sinyali
+                price_level = original_price / opening_price_multiple
+                logger.info(f"Calculated BUY price level for DOWN direction: {price_level} (alert price {original_price} / {opening_price_multiple})")
+            else:  # "UP" - SELL sinyali
+                price_level = original_price * opening_price_multiple
+                logger.info(f"Calculated SELL price level for UP direction: {price_level} (alert price {original_price} * {opening_price_multiple})")
             
             # Normalize price if IG price is provided (API için kullanılacak)
             entry_price = price_level
@@ -165,12 +179,18 @@ class TradeCalculator:
                 atr_tp = 0.02 * original_price
             
             # CSV'den gelen çarpanlarla Stop Loss ve Take Profit hesapla
-            stop_distance = atr_sl * atr_sl_multiple
-            limit_distance = atr_tp * atr_tp_multiple
+            # IG API her zaman positif mesafe değerleri bekler
+            stop_distance = abs(atr_sl * atr_sl_multiple)
+            limit_distance = abs(atr_tp * atr_tp_multiple)
             
             # Log hesaplanan değerleri
             logger.info(f"Raw stop_distance before normalization: {stop_distance} (ATR {atr_sl} * {atr_sl_multiple})")
             logger.info(f"Raw limit_distance before normalization: {limit_distance} (ATR {atr_tp} * {atr_tp_multiple})")
+            
+            # IG API'nin BUY ve SELL için mesafeleri nasıl kullanacağı:
+            # BUY: stop_level = level - stop_distance, limit_level = level + limit_distance
+            # SELL: stop_level = level + stop_distance, limit_level = level - limit_distance
+            # Bu yüzden distance değerlerini her zaman pozitif göndermeliyiz
             
             # Stop ve limit mesafelerinin makul sınırlar içinde olmasını sağla
             # Maximum değerleri kontrol et - çok büyük değerler IG tarafından reddedilebilir
@@ -225,27 +245,22 @@ class TradeCalculator:
                 limit_distance = MIN_DISTANCE
             
             # Calculate position size based on price_level (not original_price)
-            # Pozisyon büyüklüğü: max_position_size_gbp / price_level
-            position_size_raw = max_position_size_gbp / price_level
-            logger.info(f"Raw position size calculation: {max_position_size_gbp} GBP / {price_level} = {position_size_raw}")
+            # Pozisyon büyüklüğü: max_position_size_gbp / entry_price
+            position_size_raw = max_position_size_gbp / entry_price
+            logger.info(f"Raw position size calculation: {max_position_size_gbp} GBP / {entry_price} = {position_size_raw}")
             
-            # IG Markets için doğru pozisyon boyutu formatı
-            # Yüksek fiyatlı hisseler (100+ gibi) için 10000 GBP'lik pozisyon açmak için küçük bir pozisyon boyutu gerekir (ör: 6.38)
-            # ÖNEMLİ: IG API ile format uyumsuzluğunu gidermek için normalize edilecek değer
-            if ig_price is not None and ig_price > 100 and entry_price > 100:
-                # Yüksek fiyatlı hisseler için (100+) - IG API formatı ile uyumlu hesaplama
-                position_size = round(position_size_raw / 100, 1)  # Sadece 1 ondalık basamak - IG API sınırlaması
-                
-                # Eğer hesaplanan değer çok büyükse (>10), fiyat formatında sorun olabilir
-                if position_size > 10:
-                    # Format sorunu olabilir, normal hesaplamayı dene
-                    position_size = round(position_size_raw, 1)  # Sadece 1 ondalık basamak
-                    
-                logger.info(f"High price stock: position size calculation for IG API: {position_size}")
-            else:
-                # Normal fiyatlı hisseler için
-                position_size = max(0.85, round(position_size_raw, 1))  # Sadece 1 ondalık basamak
-                logger.info(f"Normal price stock: using regular size format: {position_size}")
+            # IG Markets için doğru pozisyon boyutu formatı - sadece 1 ondalık basamak
+            position_size = round(position_size_raw, 1)  # Sadece 1 ondalık basamak - IG API sınırlaması
+            
+            # Serco örneğindeki sorunu çözmek için özel durum kontrolü
+            # entry_price = 176.851, position_size_raw = 56.54, position_size = 56.5
+            # eğer hesaplanan değer çok büyük görünüyorsa (muhtemelen fiyat formatında sorun var)
+            if entry_price < 200 and position_size > 10:
+                logger.info(f"Position size seems large ({position_size}) for price {entry_price}, keeping as is")
+            # Eğer yüksek fiyatlı hisse ise ve hesaplanan değer de büyükse 100'e böl
+            elif entry_price > 800 and position_size > 10:
+                position_size = round(position_size / 100, 1)
+                logger.warning(f"Adjusting high position size for high price: {position_size}")
             
             # Log all parameters for easier debugging
             logger.info(f"Trade parameters for {ticker}:")

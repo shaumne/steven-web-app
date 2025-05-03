@@ -393,6 +393,12 @@ class IGClient:
             error_msg = "limit_level must be provided for limit orders"
             logger.error(error_msg)
             return {"status": "error", "reason": error_msg}
+        
+        # IG API her zaman pozitif mesafe değerleri bekler
+        stop_distance = abs(float(stop_distance)) if stop_distance else 0
+        limit_distance = abs(float(limit_distance)) if limit_distance else 0
+        
+        logger.info(f"Creating position with direction: {direction}, stop distance: {stop_distance}, limit distance: {limit_distance}")
             
         # Create either a market or limit position based on the use_limit_order flag
         if use_limit_order:
@@ -516,6 +522,12 @@ class IGClient:
         # Ensure direction is uppercase
         direction = direction.upper()
         
+        # IG API her zaman pozitif mesafe değerleri bekler
+        stop_distance = abs(float(stop_distance)) if stop_distance else 0
+        limit_distance = abs(float(limit_distance)) if limit_distance else 0
+        
+        logger.info(f"Using positive distances: Stop={stop_distance}, Limit={limit_distance}")
+        
         payload = {
             "epic": epic,
             "expiry": expiry,
@@ -531,7 +543,7 @@ class IGClient:
         # Only add stop/limit if they're non-zero
         if stop_distance > 0:
             payload["stopDistance"] = str(stop_distance)
-        
+            
         if limit_distance > 0:
             payload["limitDistance"] = str(limit_distance)
         
@@ -812,6 +824,12 @@ class IGClient:
         if not self._ensure_session():
             logger.error("Failed to create working order - no valid session")
             return {"status": "error", "reason": "No valid session"}
+            
+        # IG API her zaman pozitif mesafe değerleri bekler
+        stop_distance = abs(float(stop_distance)) if stop_distance else 0
+        limit_distance = abs(float(limit_distance)) if limit_distance else 0
+        
+        logger.info(f"Using positive distances: Stop={stop_distance}, Limit={limit_distance}")
         
         # Determine appropriate expiry
         if not expiry:
@@ -933,6 +951,12 @@ class IGClient:
         current_price = market_details.get('current_price', 0)
         
         logger.info(f"Market status for {epic}: {market_status}, current price: {current_price}")
+        
+        # IG API her zaman pozitif mesafe değerleri bekler
+        stop_distance = abs(float(stop_distance)) if stop_distance else 0
+        limit_distance = abs(float(limit_distance)) if limit_distance else 0
+        
+        logger.info(f"Using positive distances: Stop={stop_distance}, Limit={limit_distance}")
         
         # Piyasa açıksa positions/otc kullanabiliriz, kapalıysa workingorders/otc kullanmalıyız
         if market_status == 'TRADEABLE':
