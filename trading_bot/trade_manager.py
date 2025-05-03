@@ -3,6 +3,8 @@ Trade manager for handling trading operations
 """
 import logging
 import time
+import os
+import json
 from datetime import datetime, timedelta
 import pandas as pd
 from trading_bot.ig_api import IGClient
@@ -11,7 +13,6 @@ from trading_bot.config import (
     MAX_OPEN_POSITIONS, ALERT_MAX_AGE_SECONDS, load_ticker_data, 
     is_dividend_date
 )
-import json
 
 logger = logging.getLogger(__name__)
 
@@ -26,8 +27,47 @@ class TradeManager:
         self.ticker_data = load_ticker_data()
         self.trade_calculator = TradeCalculator(self.ticker_data)
         self.today_trades = {}  # To track trades made today by ticker
-        self.max_open_positions = MAX_OPEN_POSITIONS
+        
+        # Load settings from settings.json
+        self.load_settings()
+        
         self.epic_cache = {}  # Cache for EPIC codes to avoid repeated API calls
+    
+    def load_settings(self):
+        """Load settings from settings.json file"""
+        settings_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'settings.json')
+        try:
+            with open(settings_path, 'r') as f:
+                settings = json.load(f)
+                
+            # Load validation rules
+            self.validation_rules = settings.get('validation', {
+                'check_same_day_trades': True,
+                'check_open_position_limit': True,
+                'check_existing_position': True,
+                'check_alert_timestamp': True,
+                'check_dividend_date': True
+            })
+            
+            # Load trading settings
+            trading_settings = settings.get('trading', {})
+            self.max_open_positions = trading_settings.get('max_open_positions', MAX_OPEN_POSITIONS)
+            self.alert_max_age_seconds = trading_settings.get('alert_max_age_seconds', ALERT_MAX_AGE_SECONDS)
+            
+            logger.info(f"Loaded settings: max_positions={self.max_open_positions}, alert_age={self.alert_max_age_seconds}, validation={self.validation_rules}")
+            
+        except Exception as e:
+            logger.error(f"Error loading settings from settings.json: {e}")
+            # Default values
+            self.validation_rules = {
+                'check_same_day_trades': True,
+                'check_open_position_limit': True,
+                'check_existing_position': True,
+                'check_alert_timestamp': True,
+                'check_dividend_date': True
+            }
+            self.max_open_positions = MAX_OPEN_POSITIONS
+            self.alert_max_age_seconds = ALERT_MAX_AGE_SECONDS
     
     def process_alert(self, alert_message, timestamp=None):
         """
@@ -46,10 +86,11 @@ class TradeManager:
         alert_time = datetime.fromtimestamp(timestamp)
         now = datetime.now()
         
-        # Validate alert age
-        if (now - alert_time).total_seconds() > ALERT_MAX_AGE_SECONDS:
-            logger.warning(f"Alert is too old: {alert_message}")
-            return {"status": "error", "message": "Alert is too old"}
+        # Validate alert age if required
+        if self.validation_rules['check_alert_timestamp']:
+            if (now - alert_time).total_seconds() > self.alert_max_age_seconds:
+                logger.warning(f"Alert is too old: {alert_message}")
+                return {"status": "error", "message": "Alert is too old"}
         
         # Parse the alert message
         parse_result = self.trade_calculator.parse_alert_message(alert_message)
@@ -58,6 +99,11 @@ class TradeManager:
         
         ticker, direction, opening_price, atr_values = parse_result
         
+        # Validate the trade
+        validation_error = self._validate_trade(ticker)
+        if validation_error:
+            return validation_error
+            
         # Get EPIC code for the ticker from CSV
         epic = self.get_epic(ticker)
         if not epic:
@@ -109,7 +155,16 @@ class TradeManager:
         }
         
         # Execute the trade
-        return self._execute_trade(ticker, trade_params)
+        result = self._execute_trade(ticker, trade_params)
+        
+        # Record the trade if successful
+        if result.get('status') == 'success':
+            self.today_trades[ticker] = {
+                'time': datetime.now(),
+                'direction': trade_params['direction']
+            }
+            
+        return result
     
     def _validate_trade(self, ticker):
         """
@@ -135,7 +190,31 @@ class TradeManager:
         if not epic:
             return {"status": "error", "message": f"No IG EPIC code found for {ticker} in CSV"}
         
-        # Diğer kontrolleri devre dışı bırakıyoruz
+        # Check if position already exists for this ticker (if enabled)
+        if self.validation_rules['check_existing_position']:
+            positions = self.get_all_positions()
+            for position in positions.get('positions', []):
+                if position.get('epic') == epic:
+                    return {"status": "error", "message": f"Position already exists for {ticker}"}
+        
+        # Check for same-day trades (if enabled)
+        if self.validation_rules['check_same_day_trades']:
+            if ticker in self.today_trades:
+                trade_time = self.today_trades[ticker]['time']
+                return {"status": "error", "message": f"Already traded {ticker} today at {trade_time.strftime('%H:%M:%S')}"}
+        
+        # Check maximum open positions (if enabled)
+        if self.validation_rules['check_open_position_limit']:
+            positions = self.get_all_positions()
+            if len(positions.get('positions', [])) >= self.max_open_positions:
+                return {"status": "error", "message": f"Maximum open positions limit ({self.max_open_positions}) reached"}
+        
+        # Check for dividend date (if enabled)
+        if self.validation_rules['check_dividend_date']:
+            if is_dividend_date(ticker, self.ticker_data):
+                dividend_date = ticker_row['Next dividend date'].values[0]
+                return {"status": "error", "message": f"Today is a dividend date for {ticker} ({dividend_date})"}
+        
         return None
     
     def get_epic(self, symbol):

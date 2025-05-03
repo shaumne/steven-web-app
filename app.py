@@ -1025,30 +1025,37 @@ def dashboard_positions():
     positions_response = webhook_handler.trade_manager.get_all_positions()
     positions = positions_response.get('positions', []) if positions_response.get('status') == 'success' else []
     
-    # Get working orders - fixing the missing method issue
+    # Get working orders directly from the IG API
     try:
         # Try to get working orders using IG client directly
-        orders_response = webhook_handler.trade_manager.ig_client.get_working_orders()
-        raw_orders = orders_response.get('workingOrders', []) if isinstance(orders_response, dict) else []
+        orders_raw = webhook_handler.trade_manager.ig_client.get_working_orders()
         
         # Format the orders in a more readable way for the template
         orders = []
+        
+        # Check if orders_raw is a list (direct response) or if we need to extract workingOrders
+        if isinstance(orders_raw, list):
+            raw_orders = orders_raw
+        else:
+            # It's a dict with workingOrders key
+            raw_orders = orders_raw if isinstance(orders_raw, list) else []
+            
+        # Log raw orders for debugging
+        logging.info(f"Raw orders data: {json.dumps(raw_orders)}")
+        
         for order in raw_orders:
-            # Veri yapısını positions.html şablonunda kullanılan property'lere uygun şekilde düzenliyoruz
+            # Extract data from the order object
             working_order_data = order.get('workingOrderData', {})
             market_data = order.get('marketData', {})
             
             orders.append({
                 "dealId": working_order_data.get('dealId'),
                 "epic": market_data.get('epic'),
-                "instrumentName": market_data.get('instrumentName'),
                 "direction": working_order_data.get('direction'),
                 "size": working_order_data.get('size'),
                 "level": working_order_data.get('level'),
                 "orderType": working_order_data.get('orderType'),
-                "createdDate": working_order_data.get('createdDate'),
-                "currencyCode": working_order_data.get('currencyCode'),
-                "timeInForce": working_order_data.get('timeInForce')
+                "createdDate": working_order_data.get('createdDate')
             })
             
     except Exception as e:
@@ -1064,10 +1071,44 @@ def dashboard_settings():
     # Load ticker data
     ticker_data = load_ticker_data()
     
-    # Get IG API credentials
-    ig_username = os.environ.get('IG_USERNAME', '')
-    ig_api_key = os.environ.get('IG_API_KEY', '')
-    ig_demo = os.environ.get('IG_DEMO', '1') == '1'
+    # Load settings from JSON file
+    settings_path = os.path.join(os.path.dirname(__file__), 'settings.json')
+    try:
+        with open(settings_path, 'r') as f:
+            settings = json.load(f)
+    except Exception as e:
+        logging.error(f"Error loading settings: {e}")
+        settings = {
+            "api": {
+                "ig_username": "",
+                "ig_password": "",
+                "ig_api_key": "",
+                "ig_account_type": "DEMO"
+            },
+            "trading": {
+                "max_open_positions": 10,
+                "alert_max_age_seconds": 5,
+                "csv_file_path": "ticker_data.csv"
+            },
+            "validation": {
+                "check_same_day_trades": True,
+                "check_open_position_limit": True,
+                "check_existing_position": True,
+                "check_alert_timestamp": True,
+                "check_dividend_date": True
+            }
+        }
+    
+    # Get API credentials from settings
+    ig_username = settings['api'].get('ig_username', '')
+    ig_password = settings['api'].get('ig_password', '')
+    ig_api_key = settings['api'].get('ig_api_key', '')
+    ig_demo = settings['api'].get('ig_account_type', 'DEMO') == 'DEMO'
+    
+    # Check if connected to IG API
+    ig_connected = False
+    if hasattr(webhook_handler, 'trade_manager') and hasattr(webhook_handler.trade_manager, 'ig_client'):
+        ig_connected = webhook_handler.trade_manager.ig_client.is_connected()
     
     # Get webhook settings
     webhook_url = request.host_url + 'webhook'
@@ -1076,9 +1117,13 @@ def dashboard_settings():
                           ticker_data=ticker_data,
                           ticker_count=len(ticker_data) if not ticker_data.empty else 0,
                           ig_username=ig_username,
+                          ig_password='*' * len(ig_password) if ig_password else '',
                           ig_api_key='*' * len(ig_api_key) if ig_api_key else '',
                           ig_demo=ig_demo,
-                          webhook_url=webhook_url)
+                          ig_connected=ig_connected,
+                          webhook_url=webhook_url,
+                          validation=settings['validation'],
+                          trading=settings['trading'])
 
 @app.route('/dashboard/logs')
 @login_required
@@ -1341,18 +1386,42 @@ def save_settings():
         
         # Extract settings
         username = data.get('username')
+        password = data.get('password')
         api_key = data.get('api_key')
         demo = data.get('demo', False)
         
         # Validate settings
-        if not username or not api_key:
+        if not username or not password or not api_key:
             return jsonify({
                 'status': 'error',
-                'message': 'Username and API key are required'
+                'message': 'Username, password and API key are required'
             })
+        
+        # Load settings from JSON file
+        settings_path = os.path.join(os.path.dirname(__file__), 'settings.json')
+        try:
+            with open(settings_path, 'r') as f:
+                settings = json.load(f)
+        except Exception:
+            settings = {
+                "api": {},
+                "trading": {},
+                "validation": {}
+            }
+        
+        # Update API settings
+        settings['api']['ig_username'] = username
+        settings['api']['ig_password'] = password
+        settings['api']['ig_api_key'] = api_key
+        settings['api']['ig_account_type'] = "DEMO" if demo else "LIVE"
+        
+        # Save settings to JSON file
+        with open(settings_path, 'w') as f:
+            json.dump(settings, f, indent=4)
         
         # Update environment variables
         os.environ['IG_USERNAME'] = username
+        os.environ['IG_PASSWORD'] = password
         os.environ['IG_API_KEY'] = api_key
         os.environ['IG_DEMO'] = '1' if demo else '0'
         
@@ -1361,6 +1430,7 @@ def save_settings():
         
         with open(env_file_path, 'w') as f:
             f.write(f"IG_USERNAME={username}\n")
+            f.write(f"IG_PASSWORD={password}\n")
             f.write(f"IG_API_KEY={api_key}\n")
             f.write(f"IG_DEMO={'1' if demo else '0'}\n")
         
@@ -1373,6 +1443,69 @@ def save_settings():
         })
     except Exception as e:
         logging.error(f"Error saving settings: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': f'Error: {str(e)}'
+        })
+
+@app.route('/api/save_validation_rules', methods=['POST'])
+@login_required
+def save_validation_rules():
+    """Save validation rules and trading settings"""
+    try:
+        data = request.json
+        
+        if not data:
+            return jsonify({
+                'status': 'error',
+                'message': 'No data provided'
+            })
+        
+        # Extract validation rules
+        validation = data.get('validation', {})
+        trading = data.get('trading', {})
+        
+        # Load settings from JSON file
+        settings_path = os.path.join(os.path.dirname(__file__), 'settings.json')
+        try:
+            with open(settings_path, 'r') as f:
+                settings = json.load(f)
+        except Exception:
+            settings = {
+                "api": {},
+                "trading": {},
+                "validation": {}
+            }
+        
+        # Update validation rules
+        if validation:
+            settings['validation'] = {
+                'check_existing_position': validation.get('check_existing_position', True),
+                'check_same_day_trades': validation.get('check_same_day_trades', True),
+                'check_open_position_limit': validation.get('check_open_position_limit', True),
+                'check_alert_timestamp': validation.get('check_alert_timestamp', True),
+                'check_dividend_date': validation.get('check_dividend_date', True)
+            }
+        
+        # Update trading settings
+        if trading:
+            settings['trading']['max_open_positions'] = trading.get('max_open_positions', 10)
+            settings['trading']['alert_max_age_seconds'] = trading.get('alert_max_age_seconds', 5)
+        
+        # Save settings to JSON file
+        with open(settings_path, 'w') as f:
+            json.dump(settings, f, indent=4)
+        
+        # Update webhook handler with new settings
+        if hasattr(webhook_handler, 'update_settings'):
+            webhook_handler.update_settings(settings)
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'Validation rules saved successfully'
+        })
+    except Exception as e:
+        logging.error(f"Error saving validation rules: {e}")
         return jsonify({
             'status': 'error',
             'message': f'Error: {str(e)}'
@@ -1501,17 +1634,18 @@ def cancel_order(deal_id):
     """Cancel a working order"""
     try:
         # IG API tarafındaki çalışan emri iptal et
-        # Bu fonksiyon şu anda ig_api.py içinde mevcut değil, gerçek bir uygulamada burada bu fonksiyonu çağırmanız gerekir
-        # Örnek bir yanıt döndürelim
+        result = webhook_handler.trade_manager.ig_client.cancel_working_order(deal_id)
         
-        # Normalde burada şöyle bir kod olacaktı:
-        # result = webhook_handler.trade_manager.ig_client.cancel_working_order(deal_id)
-        
-        # Simülasyon amaçlı her zaman başarılı dönelim (gerçekte apiye bağlanacak)
-        return jsonify({
-            "status": "success",
-            "message": f"Working order {deal_id} cancelled successfully"
-        })
+        if result:
+            return jsonify({
+                "status": "success",
+                "message": f"Working order {deal_id} cancelled successfully"
+            })
+        else:
+            return jsonify({
+                "status": "error",
+                "message": "Failed to cancel working order. Please check logs for details."
+            }), 400
         
     except Exception as e:
         logging.error(f"Error cancelling working order: {e}")

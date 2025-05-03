@@ -19,6 +19,17 @@ class WebhookHandler:
         self.trade_manager = TradeManager()
         self.last_reset_day = datetime.now().day
     
+    def update_settings(self, settings=None):
+        """
+        Update settings in the trade manager
+        
+        Args:
+            settings (dict): New settings to apply
+        """
+        logger.info("Updating settings in webhook handler")
+        # Reload settings in trade manager
+        self.trade_manager.load_settings()
+    
     def process_webhook(self, request_data):
         """
         Process a webhook request

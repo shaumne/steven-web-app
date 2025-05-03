@@ -30,6 +30,15 @@
                             </div>
                         </div>
                         <div class="mb-3">
+                            <label for="igPassword" class="form-label">Password</label>
+                            <div class="input-group">
+                                <input type="password" class="form-control" id="igPassword" value="{{ ig_password }}" readonly>
+                                <button class="btn btn-outline-secondary" type="button" id="editPassword">
+                                    <i class="bi bi-pencil"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="mb-3">
                             <label for="igApiKey" class="form-label">API Key</label>
                             <div class="input-group">
                                 <input type="password" class="form-control" id="igApiKey" value="{{ ig_api_key }}" readonly>
@@ -94,6 +103,89 @@
                     <button type="button" class="btn btn-primary" id="testWebhook">
                         <i class="bi bi-lightning-charge"></i> Test Webhook
                     </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Validation Rules -->
+    <div class="row">
+        <div class="col-xl-12 col-lg-12 mb-4">
+            <div class="card shadow mb-4">
+                <div class="card-header py-3 d-flex justify-content-between align-items-center">
+                    <h6 class="m-0 font-weight-bold text-primary">Validation Rules</h6>
+                    <span class="badge bg-info">Real-time validation for incoming signals</span>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-info mb-4">
+                        <i class="bi bi-info-circle"></i> These rules are applied to each trading signal before execution. Enable or disable these validations based on your trading strategy.
+                    </div>
+                    
+                    <form id="validationRulesForm">
+                        <div class="row">
+                            <div class="col-md-6 mb-4">
+                                <div class="card h-100 border-left-primary">
+                                    <div class="card-body">
+                                        <h5 class="card-title text-primary"><i class="bi bi-shield-check"></i> Position Validation</h5>
+                                        <p class="card-text small text-muted mb-4">Controls related to existing positions and limits</p>
+                                        
+                                        <div class="mb-3 form-switch">
+                                            <input type="checkbox" class="form-check-input" id="checkExistingPosition" {% if validation.check_existing_position %}checked{% endif %}>
+                                            <label class="form-check-label" for="checkExistingPosition">Block if position already exists</label>
+                                            <div class="text-muted small">Prevents duplicate positions for the same instrument</div>
+                                        </div>
+                                        
+                                        <div class="mb-3 form-switch">
+                                            <input type="checkbox" class="form-check-input" id="checkOpenPositionLimit" {% if validation.check_open_position_limit %}checked{% endif %}>
+                                            <label class="form-check-label" for="checkOpenPositionLimit">Enforce maximum positions limit</label>
+                                            <div class="text-muted small">Won't open more positions than allowed</div>
+                                        </div>
+                                        
+                                        <div class="mb-3">
+                                            <label for="maxOpenPositions" class="form-label">Maximum open positions</label>
+                                            <input type="number" class="form-control" id="maxOpenPositions" value="{{ trading.max_open_positions }}">
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="col-md-6 mb-4">
+                                <div class="card h-100 border-left-success">
+                                    <div class="card-body">
+                                        <h5 class="card-title text-success"><i class="bi bi-clock-history"></i> Timing Controls</h5>
+                                        <p class="card-text small text-muted mb-4">Rules related to timing and schedule</p>
+                                        
+                                        <div class="mb-3 form-switch">
+                                            <input type="checkbox" class="form-check-input" id="checkSameDayTrades" {% if validation.check_same_day_trades %}checked{% endif %}>
+                                            <label class="form-check-label" for="checkSameDayTrades">One trade per day</label>
+                                            <div class="text-muted small">Only allows one trade per instrument per day</div>
+                                        </div>
+                                        
+                                        <div class="mb-3 form-switch">
+                                            <input type="checkbox" class="form-check-input" id="checkAlertTimestamp" {% if validation.check_alert_timestamp %}checked{% endif %}>
+                                            <label class="form-check-label" for="checkAlertTimestamp">Reject old signals</label>
+                                            <div class="text-muted small">Ignores delayed signals</div>
+                                        </div>
+                                        
+                                        <div class="mb-3">
+                                            <label for="alertMaxAge" class="form-label">Maximum signal age (seconds)</label>
+                                            <input type="number" class="form-control" id="alertMaxAge" value="{{ trading.alert_max_age_seconds }}">
+                                        </div>
+                                        
+                                        <div class="mb-3 form-switch">
+                                            <input type="checkbox" class="form-check-input" id="checkDividendDate" {% if validation.check_dividend_date %}checked{% endif %}>
+                                            <label class="form-check-label" for="checkDividendDate">Avoid dividend dates</label>
+                                            <div class="text-muted small">Doesn't trade on dividend distribution days</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <button type="button" class="btn btn-success px-4" id="saveValidationRules">
+                            <i class="bi bi-save"></i> Save Validation Rules
+                        </button>
+                    </form>
                 </div>
             </div>
         </div>
@@ -328,6 +420,11 @@
             showEditFieldModal('Username', $('#igUsername').val(), 'username');
         });
         
+        // Edit Password Button
+        $('#editPassword').click(function() {
+            showEditFieldModal('Password', $('#igPassword').val(), 'password');
+        });
+        
         // Edit API Key Button
         $('#editApiKey').click(function() {
             showEditFieldModal('API Key', $('#igApiKey').val(), 'apikey');
@@ -345,6 +442,7 @@
             // Prepare data
             const data = {
                 username: $('#igUsername').val(),
+                password: $('#igPassword').val(),
                 api_key: $('#igApiKey').val(),
                 demo: $('#igDemo').is(':checked')
             };
@@ -375,6 +473,53 @@
                 },
                 complete: function() {
                     // Restore button state
+                    button.prop('disabled', false);
+                }
+            });
+        });
+        
+        // Save Validation Rules
+        $('#saveValidationRules').click(function() {
+            // Prepare data
+            const data = {
+                validation: {
+                    check_existing_position: $('#checkExistingPosition').is(':checked'),
+                    check_same_day_trades: $('#checkSameDayTrades').is(':checked'),
+                    check_open_position_limit: $('#checkOpenPositionLimit').is(':checked'),
+                    check_alert_timestamp: $('#checkAlertTimestamp').is(':checked'),
+                    check_dividend_date: $('#checkDividendDate').is(':checked')
+                },
+                trading: {
+                    max_open_positions: parseInt($('#maxOpenPositions').val()),
+                    alert_max_age_seconds: parseInt($('#alertMaxAge').val())
+                }
+            };
+            
+            // Show loading state
+            const button = $(this);
+            const originalText = button.html();
+            button.html('<i class="bi bi-hourglass-split"></i> Saving...');
+            button.prop('disabled', true);
+            
+            // Make API request
+            $.ajax({
+                url: '/api/save_validation_rules',
+                type: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify(data),
+                success: function(response) {
+                    if (response.status === 'success') {
+                        alert('Validation rules saved successfully!');
+                    } else {
+                        alert('Failed to save validation rules: ' + response.message);
+                    }
+                },
+                error: function(xhr, status, error) {
+                    alert('Error saving validation rules. Please check the server logs.');
+                },
+                complete: function() {
+                    // Restore button state
+                    button.html(originalText);
                     button.prop('disabled', false);
                 }
             });
@@ -432,7 +577,7 @@
             $('#editFieldType').val(fieldType);
             
             // Set input type based on field type
-            if (fieldType === 'apikey') {
+            if (fieldType === 'apikey' || fieldType === 'password') {
                 $('#editFieldInput').attr('type', 'password');
             } else {
                 $('#editFieldInput').attr('type', 'text');
@@ -451,6 +596,8 @@
             // Update field value
             if (fieldType === 'username') {
                 $('#igUsername').val(fieldValue);
+            } else if (fieldType === 'password') {
+                $('#igPassword').val(fieldValue);
             } else if (fieldType === 'apikey') {
                 $('#igApiKey').val(fieldValue);
             }

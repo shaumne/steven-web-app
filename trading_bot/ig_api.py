@@ -804,6 +804,29 @@ class IGClient:
             return self.login()
         return True
     
+    def is_connected(self):
+        """
+        Check if the client is connected to the IG API
+        
+        Returns:
+            bool: True if connected, False otherwise
+        """
+        if not (self.cst and self.security_token):
+            # No session tokens, try logging in
+            return self.login()
+            
+        try:
+            # Make a simple request to verify the session is still valid
+            url = f"{self.BASE_URL}/accounts"
+            headers = self.headers.copy()
+            headers['Version'] = '1'
+            
+            response = self.session.get(url, headers=headers)
+            return response.status_code == 200
+        except Exception as e:
+            logger.error(f"Error checking connection: {e}")
+            return False
+    
     def create_working_order(self, epic, direction, size, order_level, limit_distance=0, stop_distance=0, guaranteed_stop=False, expiry=None):
         """
         Create a working order (limit order) at a specified price level
@@ -1090,26 +1113,74 @@ class IGClient:
             }
     
     def get_working_orders(self):
-        """
-        Get all working orders
-        
-        Returns:
-            dict: API response with working orders
-        """
+        """Get all working orders"""
         if not self._ensure_session():
-            return {"workingOrders": []}
+            return None
         
         url = f"{self.BASE_URL}/workingorders"
         headers = self.headers.copy()
         headers['Version'] = '2'
         
         try:
+            logger.info(f"Getting working orders from {url}")
+            
             response = self.session.get(url, headers=headers)
+            
             if response.status_code == 200:
-                return response.json()
+                result = response.json()
+                orders = result.get('workingOrders', [])
+                logger.info(f"Successfully retrieved {len(orders)} working orders")
+                return orders
             else:
-                logging.error(f"Failed to get working orders: {response.status_code} - {response.text}")
-                return {"workingOrders": []}
+                error_msg = ""
+                try:
+                    error_msg = response.json().get('errorCode', '')
+                except:
+                    error_msg = response.text
+                logger.error(f"Failed to get working orders: {response.status_code} - {error_msg}")
+                return None
+                
         except Exception as e:
-            logging.error(f"Error getting working orders: {e}")
-            return {"workingOrders": []} 
+            logger.error(f"Exception while getting working orders: {e}")
+            return None
+            
+    def cancel_working_order(self, deal_id):
+        """
+        Cancel a working order by deal ID
+        
+        Args:
+            deal_id (str): The deal ID of the working order to cancel
+            
+        Returns:
+            dict: Response from the API or None if failed
+        """
+        if not self._ensure_session():
+            return None
+        
+        url = f"{self.BASE_URL}/workingorders/otc/{deal_id}"
+        headers = self.headers.copy()
+        headers['Version'] = '2'  # Use version 2 for deleting working orders
+        headers['_method'] = 'DELETE'  # Required for DELETE operations
+        
+        try:
+            logger.info(f"Cancelling working order with deal ID: {deal_id}")
+            
+            # DELETE request to cancel the working order
+            response = self.session.delete(url, headers=headers)
+            
+            if response.status_code == 200:
+                result = response.json()
+                logger.info(f"Successfully cancelled working order: {deal_id}")
+                return result
+            else:
+                error_msg = ""
+                try:
+                    error_msg = response.json().get('errorCode', '')
+                except:
+                    error_msg = response.text
+                logger.error(f"Failed to cancel working order: {response.status_code} - {error_msg}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Exception while cancelling working order: {e}")
+            return None 

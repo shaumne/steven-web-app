@@ -201,11 +201,11 @@
     }
     
     function cancelOrder(dealId) {
-        // Kullanıcı arayüzünü güncelle
+        // Update the user interface
         document.getElementById('confirmButton').disabled = true;
-        document.getElementById('confirmButton').innerHTML = '<i class="bi bi-hourglass-split"></i> İşleniyor...';
+        document.getElementById('confirmButton').innerHTML = '<i class="bi bi-hourglass-split"></i> Processing...';
         
-        // API çağrısı - bu örnekte çalışan emri iptal et
+        // API call to cancel the working order
         fetch(`/cancel_order/${dealId}`, {
             method: 'POST',
             headers: {
@@ -215,15 +215,15 @@
         .then(response => response.json())
         .then(data => {
             if (data.status === 'success') {
-                alert('Emir başarıyla iptal edildi!');
+                alert('Order was successfully cancelled!');
             } else {
-                alert('Emir iptal edilirken hata oluştu: ' + data.message);
+                alert('Error cancelling order: ' + data.message);
             }
-            location.reload(); // Sayfayı yenile
+            location.reload(); // Refresh the page
         })
         .catch(error => {
             console.error('Error:', error);
-            alert('Emir iptal edilirken bir hata oluştu. Lütfen tekrar deneyin.');
+            alert('An error occurred while cancelling the order. Please try again.');
             location.reload();
         });
     }
