@@ -422,12 +422,12 @@
         
         // Edit Password Button
         $('#editPassword').click(function() {
-            showEditFieldModal('Password', $('#igPassword').val(), 'password');
+            showEditFieldModal('Password', '', 'password');
         });
         
         // Edit API Key Button
         $('#editApiKey').click(function() {
-            showEditFieldModal('API Key', $('#igApiKey').val(), 'apikey');
+            showEditFieldModal('API Key', '', 'apikey');
         });
         
         // Toggle demo account
@@ -446,6 +446,15 @@
                 api_key: $('#igApiKey').val(),
                 demo: $('#igDemo').is(':checked')
             };
+            
+            // Eğer şifre veya API anahtarı ***** formatında ise, sunucuya gönderme
+            if (data.password === '*****' || data.password === '') {
+                delete data.password;  // Şifreyi gönderme
+            }
+            
+            if (data.api_key === '*****' || data.api_key === '') {
+                delete data.api_key;  // API anahtarını gönderme
+            }
             
             // Show loading state
             const button = $(this);

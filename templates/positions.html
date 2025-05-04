@@ -355,6 +355,16 @@
             lengthMenu: [[5, 10, 25, 50, -1], [5, 10, 25, 50, "All"]],
             responsive: true,
             order: [[6, 'desc']], // Sort by P/L initially
+            columns: [
+                null, // Deal ID
+                null, // Epic
+                null, // Direction
+                null, // Size
+                null, // Open Level
+                null, // Current Level
+                null, // Profit/Loss
+                { orderable: false } // Actions column (not sortable)
+            ]
         });
         
         $('#ordersTable').DataTable({
@@ -362,6 +372,16 @@
             lengthMenu: [[5, 10, 25, 50, -1], [5, 10, 25, 50, "All"]],
             responsive: true,
             order: [[6, 'desc']], // Sort by created date initially
+            columns: [
+                null, // Deal ID
+                null, // Epic
+                null, // Direction
+                null, // Type
+                null, // Size
+                null, // Level
+                null, // Created Date
+                { orderable: false } // Actions column (not sortable)
+            ]
         });
     });
 
