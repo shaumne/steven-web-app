@@ -2,6 +2,70 @@
 
 {% block title %}Positions - Trading Bot{% endblock %}
 
+{% block extra_css %}
+<style>
+    .status-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 0.35rem 0.65rem;
+        border-radius: 50rem;
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
+    
+    .table td {
+        vertical-align: middle;
+    }
+    
+    .action-button {
+        transition: all 0.2s;
+    }
+    
+    .action-button:hover {
+        transform: translateY(-1px);
+    }
+    
+    .stats-card {
+        border-radius: 10px;
+        overflow: hidden;
+        transition: all 0.3s ease;
+        height: 100%;
+    }
+    
+    .stats-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 7px 14px rgba(0,0,0,0.1);
+    }
+    
+    .stats-icon {
+        font-size: 1.8rem;
+        padding: 10px;
+        border-radius: 8px;
+    }
+    
+    .profit-positive {
+        background: rgba(40, 167, 69, 0.1);
+        color: #28a745;
+    }
+    
+    .profit-negative {
+        background: rgba(220, 53, 69, 0.1);
+        color: #dc3545;
+    }
+    
+    .bg-positions {
+        background: rgba(44, 110, 203, 0.1);
+        color: #2c6ecb;
+    }
+    
+    .bg-orders {
+        background: rgba(255, 193, 7, 0.1);
+        color: #ffc107;
+    }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="container-fluid">
     <div class="d-sm-flex align-items-center justify-content-between mb-4">
@@ -17,20 +81,97 @@
                     <li><a class="dropdown-item" href="{{ url_for('download_activity_history_csv', days=30) }}">Last 30 Days</a></li>
                 </ul>
             </div>
-            <a href="{{ url_for('dashboard') }}" class="d-none d-sm-inline-block btn btn-sm btn-secondary shadow-sm">
+            <a href="{{ url_for('dashboard') }}" class="btn btn-sm btn-secondary shadow-sm">
                 <i class="bi bi-arrow-left"></i> Back to Dashboard
             </a>
         </div>
     </div>
 
+    <!-- Stats Cards -->
+    <div class="row mb-4">
+        <div class="col-md-3 col-sm-6 mb-3">
+            <div class="card stats-card">
+                <div class="card-body d-flex align-items-center">
+                    <div class="stats-icon bg-positions rounded me-3">
+                        <i class="bi bi-graph-up"></i>
+                    </div>
+                    <div>
+                        <div class="text-muted small">Open Positions</div>
+                        <div class="h5 mb-0 font-weight-bold">{{ positions|length }}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 col-sm-6 mb-3">
+            <div class="card stats-card">
+                <div class="card-body d-flex align-items-center">
+                    <div class="stats-icon bg-orders rounded me-3">
+                        <i class="bi bi-hourglass-split"></i>
+                    </div>
+                    <div>
+                        <div class="text-muted small">Working Orders</div>
+                        <div class="h5 mb-0 font-weight-bold">{{ orders|length }}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 col-sm-6 mb-3">
+            <div class="card stats-card">
+                <div class="card-body d-flex align-items-center">
+                    {% set total_profit = 0 %}
+                    {% for position in positions %}
+                        {% if position.profit is not none %}
+                            {% set total_profit = total_profit + position.profit %}
+                        {% endif %}
+                    {% endfor %}
+                    
+                    <div class="stats-icon {% if total_profit >= 0 %}profit-positive{% else %}profit-negative{% endif %} rounded me-3">
+                        <i class="bi {% if total_profit >= 0 %}bi-graph-up-arrow{% else %}bi-graph-down-arrow{% endif %}"></i>
+                    </div>
+                    <div>
+                        <div class="text-muted small">Total P/L</div>
+                        <div class="h5 mb-0 font-weight-bold">{{ total_profit }} GBP</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 col-sm-6 mb-3">
+            <div class="card stats-card">
+                <div class="card-body d-flex align-items-center">
+                    {% set buy_count = 0 %}
+                    {% set sell_count = 0 %}
+                    
+                    {% for position in positions %}
+                        {% if position.direction == 'BUY' %}
+                            {% set buy_count = buy_count + 1 %}
+                        {% elif position.direction == 'SELL' %}
+                            {% set sell_count = sell_count + 1 %}
+                        {% endif %}
+                    {% endfor %}
+                    
+                    <div class="stats-icon bg-positions rounded me-3">
+                        <i class="bi bi-bar-chart"></i>
+                    </div>
+                    <div>
+                        <div class="text-muted small">BUY/SELL Ratio</div>
+                        <div class="h5 mb-0 font-weight-bold">{{ buy_count }}/{{ sell_count }}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Open Positions -->
     <div class="card shadow mb-4">
-        <div class="card-header py-3">
-            <h6 class="m-0 font-weight-bold text-primary">Open Positions</h6>
+        <div class="card-header py-3 d-flex justify-content-between align-items-center">
+            <h6 class="m-0 font-weight-bold text-primary">
+                <i class="bi bi-graph-up me-1"></i> Open Positions
+            </h6>
+            <span class="badge bg-primary">{{ positions|length }} positions</span>
         </div>
         <div class="card-body">
             <div class="table-responsive">
-                <table class="table table-bordered table-hover table-sm" id="positionsTable" width="100%" cellspacing="0">
+                <table class="table table-hover table-sm align-middle" id="positionsTable" width="100%" cellspacing="0">
                     <thead>
                         <tr>
                             <th>Deal ID</th>
@@ -47,10 +188,20 @@
                         {% if positions %}
                         {% for position in positions %}
                         <tr>
-                            <td>{{ position.dealId if position.dealId is not none else 'N/A' }}</td>
+                            <td>
+                                <span class="text-monospace small">{{ position.dealId if position.dealId is not none else 'N/A' }}</span>
+                            </td>
                             <td>{{ position.epic if position.epic is not none else 'N/A' }}</td>
-                            <td class="{% if position.direction == 'BUY' %}text-success{% elif position.direction == 'SELL' %}text-danger{% endif %}">
-                                {{ position.direction if position.direction is not none else 'N/A' }}
+                            <td>
+                                <span class="status-badge {% if position.direction == 'BUY' %}bg-success text-white{% elif position.direction == 'SELL' %}bg-danger text-white{% endif %}">
+                                    {% if position.direction == 'BUY' %}
+                                        <i class="bi bi-arrow-up-right"></i> BUY
+                                    {% elif position.direction == 'SELL' %}
+                                        <i class="bi bi-arrow-down-right"></i> SELL
+                                    {% else %}
+                                        N/A
+                                    {% endif %}
+                                </span>
                             </td>
                             <td>{{ position.size if position.size is not none else 'N/A' }}</td>
                             <td>{{ position.level if position.level is not none else 'N/A' }}</td>
@@ -63,16 +214,18 @@
                                     N/A
                                 {% endif %}
                             </td>
-                            <td class="{% if position.profit is not none and position.profit > 0 %}text-success{% elif position.profit is not none and position.profit < 0 %}text-danger{% endif %}">
-                                {% if position.profit is not none %}
-                                    {{ position.profit }} {{ position.currency if position.currency is not none else 'GBP' }}
-                                {% else %}
-                                    N/A
-                                {% endif %}
+                            <td>
+                                <span class="{% if position.profit is not none and position.profit > 0 %}text-success fw-bold{% elif position.profit is not none and position.profit < 0 %}text-danger fw-bold{% endif %}">
+                                    {% if position.profit is not none %}
+                                        {% if position.profit > 0 %}+{% endif %}{{ position.profit }} {{ position.currency if position.currency is not none else 'GBP' }}
+                                    {% else %}
+                                        N/A
+                                    {% endif %}
+                                </span>
                             </td>
                             <td>
                                 {% if position.dealId is not none %}
-                                <button class="btn btn-sm btn-danger" onclick="confirmClose('{{ position.dealId }}')">
+                                <button class="btn btn-sm btn-danger action-button" onclick="confirmClose('{{ position.dealId }}')">
                                     <i class="bi bi-x-circle"></i> Close
                                 </button>
                                 {% else %}
@@ -85,7 +238,9 @@
                         {% endfor %}
                         {% else %}
                         <tr>
-                            <td colspan="8" class="text-center">No open positions found</td>
+                            <td colspan="8" class="text-center py-4 text-muted">
+                                <i class="bi bi-info-circle me-1"></i> No open positions found
+                            </td>
                         </tr>
                         {% endif %}
                     </tbody>
@@ -96,12 +251,15 @@
 
     <!-- Working Orders -->
     <div class="card shadow mb-4">
-        <div class="card-header py-3">
-            <h6 class="m-0 font-weight-bold text-primary">Working Orders</h6>
+        <div class="card-header py-3 d-flex justify-content-between align-items-center">
+            <h6 class="m-0 font-weight-bold text-primary">
+                <i class="bi bi-hourglass-split me-1"></i> Working Orders
+            </h6>
+            <span class="badge bg-warning text-dark">{{ orders|length }} orders</span>
         </div>
         <div class="card-body">
             <div class="table-responsive">
-                <table class="table table-bordered table-hover table-sm" id="ordersTable" width="100%" cellspacing="0">
+                <table class="table table-hover table-sm align-middle" id="ordersTable" width="100%" cellspacing="0">
                     <thead>
                         <tr>
                             <th>Deal ID</th>
@@ -118,18 +276,32 @@
                         {% if orders %}
                         {% for order in orders %}
                         <tr>
-                            <td>{{ order.dealId if order.dealId is not none else 'N/A' }}</td>
-                            <td>{{ order.epic if order.epic is not none else 'N/A' }}</td>
-                            <td class="{% if order.direction == 'BUY' %}text-success{% elif order.direction == 'SELL' %}text-danger{% endif %}">
-                                {{ order.direction if order.direction is not none else 'N/A' }}
+                            <td>
+                                <span class="text-monospace small">{{ order.dealId if order.dealId is not none else 'N/A' }}</span>
                             </td>
-                            <td>{{ order.orderType if order.orderType is not none else 'N/A' }}</td>
+                            <td>{{ order.epic if order.epic is not none else 'N/A' }}</td>
+                            <td>
+                                <span class="status-badge {% if order.direction == 'BUY' %}bg-success text-white{% elif order.direction == 'SELL' %}bg-danger text-white{% endif %}">
+                                    {% if order.direction == 'BUY' %}
+                                        <i class="bi bi-arrow-up-right"></i> BUY
+                                    {% elif order.direction == 'SELL' %}
+                                        <i class="bi bi-arrow-down-right"></i> SELL
+                                    {% else %}
+                                        N/A
+                                    {% endif %}
+                                </span>
+                            </td>
+                            <td>
+                                <span class="status-badge bg-info text-white">
+                                    {{ order.orderType if order.orderType is not none else 'N/A' }}
+                                </span>
+                            </td>
                             <td>{{ order.size if order.size is not none else 'N/A' }}</td>
                             <td>{{ order.level if order.level is not none else 'N/A' }}</td>
                             <td>{{ order.createdDate if order.createdDate is not none else 'N/A' }}</td>
                             <td>
                                 {% if order.dealId is not none %}
-                                <button class="btn btn-sm btn-danger" onclick="confirmCancelOrder('{{ order.dealId }}')">
+                                <button class="btn btn-sm btn-danger action-button" onclick="confirmCancelOrder('{{ order.dealId }}')">
                                     <i class="bi bi-x-circle"></i> Cancel
                                 </button>
                                 {% else %}
@@ -142,7 +314,9 @@
                         {% endfor %}
                         {% else %}
                         <tr>
-                            <td colspan="8" class="text-center">No working orders found</td>
+                            <td colspan="8" class="text-center py-4 text-muted">
+                                <i class="bi bi-info-circle me-1"></i> No working orders found
+                            </td>
                         </tr>
                         {% endif %}
                     </tbody>
@@ -154,7 +328,7 @@
 
 <!-- Confirmation Modal -->
 <div class="modal fade" id="confirmationModal" tabindex="-1" aria-labelledby="confirmationModalLabel" aria-hidden="true">
-    <div class="modal-dialog">
+    <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title" id="confirmationModalLabel">Confirm Action</h5>
@@ -174,9 +348,26 @@
 
 {% block extra_js %}
 <script>
+    // Initialize DataTables
+    $(document).ready(function() {
+        $('#positionsTable').DataTable({
+            pageLength: 10,
+            lengthMenu: [[5, 10, 25, 50, -1], [5, 10, 25, 50, "All"]],
+            responsive: true,
+            order: [[6, 'desc']], // Sort by P/L initially
+        });
+        
+        $('#ordersTable').DataTable({
+            pageLength: 10,
+            lengthMenu: [[5, 10, 25, 50, -1], [5, 10, 25, 50, "All"]],
+            responsive: true,
+            order: [[6, 'desc']], // Sort by created date initially
+        });
+    });
+
     // Close position
     function confirmClose(dealId) {
-        document.getElementById('confirmationMessage').innerText = 'Are you sure you want to close this position?';
+        document.getElementById('confirmationMessage').innerHTML = '<div class="alert alert-warning"><i class="bi bi-exclamation-triangle me-2"></i>Are you sure you want to close this position?<br><small class="text-muted">This action cannot be undone.</small></div>';
         document.getElementById('confirmButton').onclick = function() {
             closePosition(dealId);
         };
@@ -192,7 +383,7 @@
     
     // Cancel order
     function confirmCancelOrder(dealId) {
-        document.getElementById('confirmationMessage').innerText = 'Are you sure you want to cancel this order?';
+        document.getElementById('confirmationMessage').innerHTML = '<div class="alert alert-warning"><i class="bi bi-exclamation-triangle me-2"></i>Are you sure you want to cancel this order?<br><small class="text-muted">This action cannot be undone.</small></div>';
         document.getElementById('confirmButton').onclick = function() {
             cancelOrder(dealId);
         };

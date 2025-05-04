@@ -11,9 +11,9 @@
         "csv_file_path": "ticker_data.csv"
     },
     "validation": {
+        "check_existing_position": false,
         "check_same_day_trades": true,
         "check_open_position_limit": true,
-        "check_existing_position": true,
         "check_alert_timestamp": true,
         "check_dividend_date": true
     }

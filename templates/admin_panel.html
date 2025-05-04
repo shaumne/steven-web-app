@@ -2,30 +2,239 @@
 
 {% block title %}Admin Panel - Trading Bot{% endblock %}
 
+{% block extra_css %}
+<style>
+    .admin-card {
+        border-radius: 10px;
+        overflow: hidden;
+        transition: all 0.3s ease;
+    }
+    
+    .admin-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 8px 15px rgba(0, 0, 0, 0.1);
+    }
+    
+    .system-stat-card {
+        border-radius: 10px;
+        overflow: hidden;
+        height: 100%;
+        border-left: 4px solid transparent;
+        transition: all 0.3s ease;
+    }
+    
+    .system-stat-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 12px rgba(0, 0, 0, 0.08);
+    }
+    
+    .stat-card-app {
+        border-left-color: #2c6ecb;
+    }
+    
+    .stat-card-server {
+        border-left-color: #28a745;
+    }
+    
+    .stat-card-metrics {
+        border-left-color: #e6a100;
+    }
+    
+    .user-badge {
+        font-size: 0.8rem;
+        padding: 0.4rem 0.8rem;
+        border-radius: 50rem;
+    }
+    
+    .user-action-btn {
+        transition: all 0.2s;
+    }
+    
+    .user-action-btn:hover {
+        transform: translateY(-2px);
+    }
+    
+    .progress {
+        height: 8px;
+        border-radius: 4px;
+    }
+    
+    .password-strength-meter {
+        height: 4px;
+        transition: all 0.3s;
+        margin-top: 5px;
+    }
+    
+    .modal-content {
+        border-radius: 10px;
+        border: none;
+    }
+    
+    .modal-header {
+        border-bottom: 1px solid rgba(0,0,0,0.05);
+        background-color: #f8f9fa;
+    }
+    
+    .modal-footer {
+        border-top: 1px solid rgba(0,0,0,0.05);
+    }
+    
+    .change-own-pwd-btn {
+        transition: all 0.3s;
+    }
+    
+    .change-own-pwd-btn:hover {
+        background-color: rgba(44, 110, 203, 0.1);
+    }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="container-fluid">
+    <!-- Header -->
     <div class="d-sm-flex align-items-center justify-content-between mb-4">
-        <h1 class="h3 mb-0 text-gray-800">Admin Panel</h1>
-        <a href="{{ url_for('dashboard') }}" class="d-none d-sm-inline-block btn btn-sm btn-secondary shadow-sm">
+        <div>
+            <h1 class="h3 mb-0 fw-bold text-gray-800">Admin Panel</h1>
+            <p class="text-muted mb-0">System administration and user management</p>
+        </div>
+        <div class="d-flex">
+            {% if session.get('user') %}
+            <button class="btn btn-outline-primary me-2 change-own-pwd-btn" 
+                    onclick="preparePasswordChange(&quot;{{ session.get('user') }}&quot;)" 
+                    data-bs-toggle="modal" 
+                    data-bs-target="#changePasswordModal">
+                <i class="bi bi-shield-lock"></i> Change My Password
+            </button>
+            {% endif %}
+            <a href="{{ url_for('dashboard') }}" class="btn btn-sm btn-secondary shadow-sm">
             <i class="bi bi-arrow-left"></i> Back to Dashboard
         </a>
+        </div>
+    </div>
+
+    <!-- Status Overview Row -->
+    <div class="row mb-4">
+        <div class="col-md-4 mb-4">
+            <div class="card border-0 shadow system-stat-card stat-card-app">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h6 class="card-title mb-0 text-primary fw-bold">System Status</h6>
+                        <div class="stats-icon bg-primary bg-opacity-10 p-2 rounded-circle">
+                            <i class="bi bi-hdd-rack text-primary"></i>
+                        </div>
+                    </div>
+                    <div class="d-flex align-items-center mb-2">
+                        <div class="me-3">
+                            <span class="badge bg-success d-inline-flex align-items-center gap-1">
+                                <i class="bi bi-check-circle-fill"></i> Online
+                            </span>
+                        </div>
+                        <div class="small text-muted">Since {{ uptime|default('System start') }}</div>
+                    </div>
+                    <div>
+                        <div class="d-flex justify-content-between align-items-center small">
+                            <span>Memory Usage</span>
+                            <span>{{ memory_usage|default('N/A') }}</span>
+                        </div>
+                        <div class="progress">
+                            {% if memory_usage is defined and memory_usage %}
+                                {% set memory_pct = memory_usage.split('%')[0]|int %}
+                            {% else %}
+                                {% set memory_pct = 0 %}
+                            {% endif %}
+                            
+                            <div class="progress-bar 
+                                {% if memory_pct < 70 %}
+                                    bg-success
+                                {% elif memory_pct < 90 %}
+                                    bg-warning
+                                {% else %}
+                                    bg-danger
+                                {% endif %}"
+                                style="width: {{ memory_pct }}%" 
+                                role="progressbar" 
+                                aria-valuenow="{{ memory_pct }}" 
+                                aria-valuemin="0" 
+                                aria-valuemax="100">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4 mb-4">
+            <div class="card border-0 shadow system-stat-card stat-card-server">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h6 class="card-title mb-0 text-success fw-bold">Application Info</h6>
+                        <div class="stats-icon bg-success bg-opacity-10 p-2 rounded-circle">
+                            <i class="bi bi-info-circle text-success"></i>
+                        </div>
+                    </div>
+                    <ul class="list-group list-group-flush">
+                        <li class="list-group-item px-0 py-2 border-0 d-flex justify-content-between">
+                            <span class="text-muted">Version</span>
+                            <span class="fw-medium">1.0.0</span>
+                        </li>
+                        <li class="list-group-item px-0 py-2 border-0 d-flex justify-content-between">
+                            <span class="text-muted">Environment</span>
+                            <span class="fw-medium">{{ request.host }}</span>
+                        </li>
+                        <li class="list-group-item px-0 py-2 border-0 d-flex justify-content-between">
+                            <span class="text-muted">Python</span>
+                            <span class="fw-medium">{{ python_version|default('N/A') }}</span>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4 mb-4">
+            <div class="card border-0 shadow system-stat-card stat-card-metrics">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h6 class="card-title mb-0 text-warning fw-bold">Server Info</h6>
+                        <div class="stats-icon bg-warning bg-opacity-10 p-2 rounded-circle">
+                            <i class="bi bi-cpu text-warning"></i>
+                        </div>
+                    </div>
+                    <ul class="list-group list-group-flush">
+                        <li class="list-group-item px-0 py-2 border-0 d-flex justify-content-between">
+                            <span class="text-muted">Platform</span>
+                            <span class="fw-medium">{{ platform|default('N/A') }}</span>
+                        </li>
+                        <li class="list-group-item px-0 py-2 border-0 d-flex justify-content-between">
+                            <span class="text-muted">Hostname</span>
+                            <span class="fw-medium">{{ request.host.split(':')[0] }}</span>
+                        </li>
+                        <li class="list-group-item px-0 py-2 border-0 d-flex justify-content-between">
+                            <span class="text-muted">Port</span>
+                            <span class="fw-medium">{{ request.host.split(':')[1] if ':' in request.host else '80' }}</span>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- User Management Card -->
-    <div class="card shadow mb-4">
-        <div class="card-header py-3 d-flex justify-content-between align-items-center">
+    <div class="card shadow mb-4 admin-card">
+        <div class="card-header py-3 d-flex justify-content-between align-items-center bg-white">
+            <div class="d-flex align-items-center">
+                <i class="bi bi-people-fill text-primary me-2"></i>
             <h6 class="m-0 font-weight-bold text-primary">User Management</h6>
-            <button class="btn btn-sm btn-success" data-bs-toggle="modal" data-bs-target="#addUserModal">
-                <i class="bi bi-person-plus"></i> Add User
+            </div>
+            <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#addUserModal">
+                <i class="bi bi-person-plus-fill"></i> Add User
             </button>
         </div>
         <div class="card-body">
             <div class="table-responsive">
-                <table class="table table-bordered table-hover" id="usersTable" width="100%" cellspacing="0">
-                    <thead>
+                <table class="table table-hover align-middle" id="usersTable" width="100%" cellspacing="0">
+                    <thead class="table-light">
                         <tr>
                             <th>Username</th>
                             <th>Role</th>
+                            <th>Last Login</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
@@ -33,34 +242,66 @@
                         {% if users %}
                         {% for username, user_data in users.items() %}
                         <tr>
-                            <td>{{ username }}</td>
                             <td>
-                                <span class="badge bg-{% if user_data.role == 'admin' %}danger{% else %}primary{% endif %}">
+                                <div class="d-flex align-items-center">
+                                    <div class="avatar-circle bg-{{ 'primary' if user_data.role == 'user' else 'danger' }} text-white me-2 rounded-circle d-flex align-items-center justify-content-center" style="width: 35px; height: 35px;">
+                                        {{ username[0] | upper }}
+                                    </div>
+                                    <div>
+                                        {{ username }}
+                                        {% if username == session.get('user') %}
+                                        <span class="badge bg-info text-white ms-2">You</span>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            </td>
+                            <td>
+                                <span class="user-badge bg-{{ 'danger' if user_data.role == 'admin' else 'primary' }} text-white">
                                     {{ user_data.role|title }}
                                 </span>
                             </td>
                             <td>
-                                {% if username != session.get('user') %}
-                                <button class="btn btn-sm btn-warning" 
-                                        onclick="preparePasswordChange('{{ username }}')" 
+                                <span class="text-muted">{{ user_data.get('last_login', 'Never') }}</span>
+                            </td>
+                            <td>
+                                <div class="d-flex gap-2">
+                                    <button class="btn btn-sm btn-outline-primary user-action-btn" 
+                                            onclick="preparePasswordChange(&quot;{{ username }}&quot;)" 
                                         data-bs-toggle="modal" 
-                                        data-bs-target="#changePasswordModal">
-                                    <i class="bi bi-key"></i> Change Password
+                                            data-bs-target="#changePasswordModal"
+                                            title="Change Password">
+                                        <i class="bi bi-key-fill"></i>
                                 </button>
-                                <a href="{{ url_for('delete_user', username=username) }}" 
-                                   class="btn btn-sm btn-danger"
-                                   onclick="return confirm('Are you sure you want to delete user {{ username }}?');">
-                                    <i class="bi bi-trash"></i> Delete
-                                </a>
+                                    
+                                    <button class="btn btn-sm btn-outline-warning user-action-btn"
+                                            {% if user_data.role == 'admin' %}
+                                            onclick="confirmRoleChange(&quot;{{ username }}&quot;, 'user')"
+                                            title="Demote to User"
                                 {% else %}
-                                <span class="text-muted">Current User</span>
+                                            onclick="confirmRoleChange(&quot;{{ username }}&quot;, 'admin')"
+                                            title="Promote to Admin"
+                                            {% endif %}>
+                                        <i class="bi bi-{{ 'arrow-down-circle' if user_data.role == 'admin' else 'arrow-up-circle' }}"></i>
+                                    </button>
+                                    
+                                    {% if username != session.get('user') %}
+                                    <button class="btn btn-sm btn-outline-danger user-action-btn"
+                                            onclick="confirmDeleteUser(&quot;{{ username }}&quot;)"
+                                            title="Delete User">
+                                        <i class="bi bi-trash-fill"></i>
+                                    </button>
                                 {% endif %}
+                                </div>
                             </td>
                         </tr>
                         {% endfor %}
                         {% else %}
                         <tr>
-                            <td colspan="3" class="text-center">No users found</td>
+                            <td colspan="4" class="text-center py-4">
+                                <div class="text-muted">
+                                    <i class="bi bi-emoji-frown me-2"></i> No users found
+                                </div>
+                            </td>
                         </tr>
                         {% endif %}
                     </tbody>
@@ -68,82 +309,59 @@
             </div>
         </div>
     </div>
-
-    <!-- System Information Card -->
-    <div class="card shadow mb-4">
-        <div class="card-header py-3">
-            <h6 class="m-0 font-weight-bold text-primary">System Information</h6>
-        </div>
-        <div class="card-body">
-            <div class="row">
-                <div class="col-md-6">
-                    <h5>Application</h5>
-                    <ul class="list-group mb-3">
-                        <li class="list-group-item d-flex justify-content-between align-items-center">
-                            Version
-                            <span>1.0.0</span>
-                        </li>
-                        <li class="list-group-item d-flex justify-content-between align-items-center">
-                            Environment
-                            <span>{{ request.host }}</span>
-                        </li>
-                        <li class="list-group-item d-flex justify-content-between align-items-center">
-                            Python Version
-                            <span>{{ python_version }}</span>
-                        </li>
-                    </ul>
-                </div>
-                <div class="col-md-6">
-                    <h5>Server</h5>
-                    <ul class="list-group">
-                        <li class="list-group-item d-flex justify-content-between align-items-center">
-                            Platform
-                            <span>{{ platform }}</span>
-                        </li>
-                        <li class="list-group-item d-flex justify-content-between align-items-center">
-                            Uptime
-                            <span>{{ uptime }}</span>
-                        </li>
-                        <li class="list-group-item d-flex justify-content-between align-items-center">
-                            Memory Usage
-                            <span>{{ memory_usage }}</span>
-                        </li>
-                    </ul>
-                </div>
-            </div>
-        </div>
-    </div>
 </div>
 
 <!-- Add User Modal -->
 <div class="modal fade" id="addUserModal" tabindex="-1" aria-labelledby="addUserModalLabel" aria-hidden="true">
-    <div class="modal-dialog">
-        <div class="modal-content">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content shadow">
             <div class="modal-header">
-                <h5 class="modal-title" id="addUserModalLabel">Add New User</h5>
+                <h5 class="modal-title" id="addUserModalLabel">
+                    <i class="bi bi-person-plus text-primary me-2"></i>Add New User
+                </h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <form action="{{ url_for('add_user') }}" method="post">
+            <form action="{{ url_for('add_user') }}" method="post" id="addUserForm">
                 <div class="modal-body">
                     <div class="mb-3">
                         <label for="username" class="form-label">Username</label>
+                        <div class="input-group">
+                            <span class="input-group-text"><i class="bi bi-person"></i></span>
                         <input type="text" class="form-control" id="username" name="username" required>
+                        </div>
+                    </div>
+                    <div class="mb-1">
+                        <label for="password" class="form-label">Password</label>
+                        <div class="input-group">
+                            <span class="input-group-text"><i class="bi bi-lock"></i></span>
+                            <input type="password" class="form-control" id="password" name="password" required onkeyup="checkPasswordStrength(this.value)">
+                            <button class="btn btn-outline-secondary" type="button" id="togglePassword">
+                                <i class="bi bi-eye"></i>
+                            </button>
+                        </div>
                     </div>
                     <div class="mb-3">
-                        <label for="password" class="form-label">Password</label>
-                        <input type="password" class="form-control" id="password" name="password" required>
+                        <div class="password-strength-meter w-100 bg-light">
+                            <div id="passwordStrength" class="bg-danger" style="width: 0%; height: 100%;"></div>
+                        </div>
+                        <small id="passwordFeedback" class="form-text text-muted">Password strength indicator</small>
                     </div>
                     <div class="mb-3">
                         <label for="role" class="form-label">Role</label>
+                        <div class="input-group">
+                            <span class="input-group-text"><i class="bi bi-shield"></i></span>
                         <select class="form-select" id="role" name="role">
                             <option value="user">User</option>
                             <option value="admin">Admin</option>
                         </select>
+                        </div>
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Add User</button>
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-person-plus me-1"></i> Add User
+                    </button>
                 </div>
             </form>
         </div>
@@ -152,25 +370,79 @@
 
 <!-- Change Password Modal -->
 <div class="modal fade" id="changePasswordModal" tabindex="-1" aria-labelledby="changePasswordModalLabel" aria-hidden="true">
-    <div class="modal-dialog">
-        <div class="modal-content">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content shadow">
             <div class="modal-header">
-                <h5 class="modal-title" id="changePasswordModalLabel">Change Password</h5>
+                <h5 class="modal-title" id="changePasswordModalLabel">
+                    <i class="bi bi-shield-lock text-primary me-2"></i>Change Password
+                </h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <form action="{{ url_for('change_password') }}" method="post">
+            <form action="{{ url_for('change_password') }}" method="post" id="changePasswordForm">
                 <div class="modal-body">
                     <input type="hidden" id="change_username" name="username">
+                    
                     <div class="mb-3">
+                        <label for="current_password" class="form-label d-none" id="current_password_label">Current Password</label>
+                        <div class="input-group d-none" id="current_password_group">
+                            <span class="input-group-text"><i class="bi bi-lock-fill"></i></span>
+                            <input type="password" class="form-control" id="current_password" name="current_password">
+                        </div>
+                    </div>
+                    
+                    <div class="mb-1">
                         <label for="new_password" class="form-label">New Password</label>
-                        <input type="password" class="form-control" id="new_password" name="password" required>
+                        <div class="input-group">
+                            <span class="input-group-text"><i class="bi bi-lock"></i></span>
+                            <input type="password" class="form-control" id="new_password" name="password" required onkeyup="checkNewPasswordStrength(this.value)">
+                            <button class="btn btn-outline-secondary" type="button" id="toggleNewPassword">
+                                <i class="bi bi-eye"></i>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <div class="password-strength-meter w-100 bg-light">
+                            <div id="newPasswordStrength" class="bg-danger" style="width: 0%; height: 100%;"></div>
+                        </div>
+                        <small id="newPasswordFeedback" class="form-text text-muted">Password strength indicator</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="confirm_password" class="form-label">Confirm Password</label>
+                        <div class="input-group">
+                            <span class="input-group-text"><i class="bi bi-lock-check"></i></span>
+                            <input type="password" class="form-control" id="confirm_password" required onkeyup="checkPasswordMatch()">
+                        </div>
+                        <div id="passwordMatchFeedback" class="form-text"></div>
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Change Password</button>
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="changePasswordBtn">
+                        <i class="bi bi-check-circle me-1"></i> Change Password
+                    </button>
                 </div>
             </form>
+        </div>
+    </div>
+</div>
+
+<!-- Confirmation Modal -->
+<div class="modal fade" id="confirmationModal" tabindex="-1" aria-labelledby="confirmationModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+        <div class="modal-content shadow">
+            <div class="modal-header">
+                <h5 class="modal-title" id="confirmationModalLabel">Confirm Action</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="confirmationMessage">
+                Are you sure you want to perform this action?
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" id="confirmActionBtn">Confirm</button>
+            </div>
         </div>
     </div>
 </div>
@@ -178,13 +450,221 @@
 
 {% block extra_js %}
 <script>
+    // Initialize DataTable
+    $(document).ready(function() {
+        $('#usersTable').DataTable({
+            responsive: true,
+            order: [[1, 'asc']]
+        });
+        
+        // Toggle password visibility in Add User form
+        $('#togglePassword').click(function() {
+            const passwordField = $('#password');
+            const passwordFieldType = passwordField.attr('type');
+            const toggleIcon = $(this).find('i');
+            
+            if (passwordFieldType === 'password') {
+                passwordField.attr('type', 'text');
+                toggleIcon.removeClass('bi-eye').addClass('bi-eye-slash');
+            } else {
+                passwordField.attr('type', 'password');
+                toggleIcon.removeClass('bi-eye-slash').addClass('bi-eye');
+            }
+        });
+        
+        // Toggle new password visibility in Change Password form
+        $('#toggleNewPassword').click(function() {
+            const passwordField = $('#new_password');
+            const passwordFieldType = passwordField.attr('type');
+            const toggleIcon = $(this).find('i');
+            
+            if (passwordFieldType === 'password') {
+                passwordField.attr('type', 'text');
+                toggleIcon.removeClass('bi-eye').addClass('bi-eye-slash');
+            } else {
+                passwordField.attr('type', 'password');
+                toggleIcon.removeClass('bi-eye-slash').addClass('bi-eye');
+            }
+        });
+    });
+    
+    // Password change preparation
     function preparePasswordChange(username) {
         document.getElementById('change_username').value = username;
-        document.getElementById('changePasswordModalLabel').innerText = 'Change Password for ' + username;
+        document.getElementById('changePasswordModalLabel').innerHTML = 
+            '<i class="bi bi-shield-lock text-primary me-2"></i>Change Password for ' + username;
+        
+        // Reset form
+        document.getElementById('changePasswordForm').reset();
+        document.getElementById('newPasswordStrength').style.width = '0%';
+        document.getElementById('newPasswordFeedback').textContent = 'Password strength indicator';
+        document.getElementById('newPasswordFeedback').className = 'form-text text-muted';
+        document.getElementById('passwordMatchFeedback').textContent = '';
+        
+        // Show/hide current password field based on if it's the current user
+        const currentUser = "{{ session.get('user') }}";
+        const currentPasswordGroup = document.getElementById('current_password_group');
+        const currentPasswordLabel = document.getElementById('current_password_label');
+        
+        if (username === currentUser) {
+            currentPasswordGroup.classList.remove('d-none');
+            currentPasswordLabel.classList.remove('d-none');
+            document.getElementById('current_password').setAttribute('required', 'required');
+        } else {
+            currentPasswordGroup.classList.add('d-none');
+            currentPasswordLabel.classList.add('d-none');
+            document.getElementById('current_password').removeAttribute('required');
+        }
     }
     
-    $(document).ready(function() {
-        $('#usersTable').DataTable();
-    });
+    // Password strength checker for Add User form
+    function checkPasswordStrength(password) {
+        const strengthBar = document.getElementById('passwordStrength');
+        const strengthFeedback = document.getElementById('passwordFeedback');
+        
+        // Default values
+        let strength = 0;
+        let feedback = 'Password strength indicator';
+        let color = 'danger';
+        
+        if (password.length > 0) {
+            // Check password strength
+            if (password.length >= 8) strength += 25;
+            if (/[A-Z]/.test(password)) strength += 25;
+            if (/[0-9]/.test(password)) strength += 25;
+            if (/[^A-Za-z0-9]/.test(password)) strength += 25;
+            
+            // Set feedback based on strength
+            if (strength <= 25) {
+                feedback = 'Weak password';
+                color = 'danger';
+            } else if (strength <= 50) {
+                feedback = 'Moderate password';
+                color = 'warning';
+            } else if (strength <= 75) {
+                feedback = 'Good password';
+                color = 'info';
+            } else {
+                feedback = 'Strong password';
+                color = 'success';
+            }
+        }
+        
+        // Update the UI
+        strengthBar.style.width = strength + '%';
+        strengthBar.className = 'bg-' + color;
+        strengthFeedback.textContent = feedback;
+        strengthFeedback.className = 'form-text text-' + color;
+    }
+    
+    // Password strength checker for Change Password form
+    function checkNewPasswordStrength(password) {
+        const strengthBar = document.getElementById('newPasswordStrength');
+        const strengthFeedback = document.getElementById('newPasswordFeedback');
+        
+        // Default values
+        let strength = 0;
+        let feedback = 'Password strength indicator';
+        let color = 'danger';
+        
+        if (password.length > 0) {
+            // Check password strength
+            if (password.length >= 8) strength += 25;
+            if (/[A-Z]/.test(password)) strength += 25;
+            if (/[0-9]/.test(password)) strength += 25;
+            if (/[^A-Za-z0-9]/.test(password)) strength += 25;
+            
+            // Set feedback based on strength
+            if (strength <= 25) {
+                feedback = 'Weak password';
+                color = 'danger';
+            } else if (strength <= 50) {
+                feedback = 'Moderate password';
+                color = 'warning';
+            } else if (strength <= 75) {
+                feedback = 'Good password';
+                color = 'info';
+            } else {
+                feedback = 'Strong password';
+                color = 'success';
+            }
+        }
+        
+        // Update the UI
+        strengthBar.style.width = strength + '%';
+        strengthBar.className = 'bg-' + color;
+        strengthFeedback.textContent = feedback;
+        strengthFeedback.className = 'form-text text-' + color;
+        
+        // Check if passwords match
+        checkPasswordMatch();
+    }
+    
+    // Check if passwords match
+    function checkPasswordMatch() {
+        const newPassword = document.getElementById('new_password').value;
+        const confirmPassword = document.getElementById('confirm_password').value;
+        const feedback = document.getElementById('passwordMatchFeedback');
+        const changeBtn = document.getElementById('changePasswordBtn');
+        
+        if (confirmPassword.length > 0) {
+            if (newPassword === confirmPassword) {
+                feedback.textContent = 'Passwords match';
+                feedback.className = 'form-text text-success';
+                changeBtn.disabled = false;
+            } else {
+                feedback.textContent = 'Passwords do not match';
+                feedback.className = 'form-text text-danger';
+                changeBtn.disabled = true;
+            }
+        } else {
+            feedback.textContent = '';
+            changeBtn.disabled = false;
+        }
+    }
+    
+    // Confirm user deletion
+    function confirmDeleteUser(username) {
+        const confirmationMessage = document.getElementById('confirmationMessage');
+        const confirmBtn = document.getElementById('confirmActionBtn');
+        
+        confirmationMessage.innerHTML = `
+            <div class="alert alert-danger">
+                <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                Are you sure you want to delete user <strong>${username}</strong>?
+                <div class="mt-2 small">This action cannot be undone.</div>
+            </div>
+        `;
+        
+        confirmBtn.onclick = function() {
+            window.location.href = "{{ url_for('delete_user', username='') }}" + username;
+        };
+        
+        new bootstrap.Modal(document.getElementById('confirmationModal')).show();
+    }
+    
+    // Confirm role change
+    function confirmRoleChange(username, newRole) {
+        const confirmationMessage = document.getElementById('confirmationMessage');
+        const confirmBtn = document.getElementById('confirmActionBtn');
+        const roleDisplay = newRole === 'admin' ? 'Administrator' : 'User';
+        const actionVerb = newRole === 'admin' ? 'promote' : 'demote';
+        
+        confirmationMessage.innerHTML = `
+            <div class="alert alert-warning">
+                <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                Are you sure you want to ${actionVerb} <strong>${username}</strong> to <strong>${roleDisplay}</strong>?
+            </div>
+        `;
+        
+        confirmBtn.onclick = function() {
+            // Here you would need to implement the role change endpoint
+            // For now, just reload the page with an alert
+            alert(`User ${username} would be changed to ${roleDisplay} role`);
+            window.location.reload();
+        };
+        
+        new bootstrap.Modal(document.getElementById('confirmationModal')).show();
+    }
 </script>
 {% endblock %} 

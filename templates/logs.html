@@ -2,79 +2,6 @@
 
 {% block title %}Logs - Trading Bot{% endblock %}
 
-{% block content %}
-<div class="container-fluid">
-    <div class="d-sm-flex align-items-center justify-content-between mb-4">
-        <h1 class="h3 mb-0 text-gray-800">Log Files</h1>
-        <a href="{{ url_for('dashboard') }}" class="d-none d-sm-inline-block btn btn-sm btn-secondary shadow-sm">
-            <i class="bi bi-arrow-left"></i> Back to Dashboard
-        </a>
-    </div>
-
-    <!-- Log Files Card -->
-    <div class="card shadow mb-4">
-        <div class="card-header py-3 d-flex justify-content-between align-items-center">
-            <h6 class="m-0 font-weight-bold text-primary">Available Log Files</h6>
-            <div>
-                <button class="btn btn-sm btn-primary" id="refreshLogs">
-                    <i class="bi bi-arrow-repeat"></i> Refresh
-                </button>
-            </div>
-        </div>
-        <div class="card-body">
-            {% if log_files %}
-            <div class="table-responsive">
-                <table class="table table-bordered table-hover" id="logsTable" width="100%" cellspacing="0">
-                    <thead>
-                        <tr>
-                            <th>Filename</th>
-                            <th>Size</th>
-                            <th>Last Modified</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for log in log_files %}
-                        <tr>
-                            <td>{{ log.name }}</td>
-                            <td>{{ (log.size / 1024)|round(2) }} KB</td>
-                            <td>{{ log.modified }}</td>
-                            <td>
-                                <a href="{{ url_for('view_log', filename=log.name) }}" class="btn btn-sm btn-primary">
-                                    <i class="bi bi-eye"></i> View
-                                </a>
-                                <button class="btn btn-sm btn-info" 
-                                        data-bs-toggle="collapse" 
-                                        data-bs-target="#preview-{{ loop.index }}" 
-                                        aria-expanded="false">
-                                    <i class="bi bi-file-text"></i> Preview
-                                </button>
-                            </td>
-                        </tr>
-                        <tr class="preview-row">
-                            <td colspan="4" class="p-0">
-                                <div class="collapse" id="preview-{{ loop.index }}">
-                                    <div class="card card-body bg-light">
-                                        <h6 class="font-weight-bold">Last lines preview:</h6>
-                                        <pre class="log-preview">{{ log.preview }}</pre>
-                                    </div>
-                                </div>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-            {% else %}
-            <div class="alert alert-info">
-                <i class="bi bi-info-circle"></i> No log files found.
-            </div>
-            {% endif %}
-        </div>
-    </div>
-</div>
-{% endblock %}
-
 {% block extra_css %}
 <style>
     .log-preview {
@@ -94,21 +21,169 @@
     .preview-row:hover {
         background-color: transparent !important;
     }
+    
+    .preview-container {
+        padding: 0;
+        border-top: none;
+    }
+    
+    .log-card {
+        border-radius: 10px;
+        overflow: hidden;
+        transition: all 0.2s ease;
+    }
+    
+    .log-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(0,0,0,0.08);
+    }
+    
+    .log-file-name {
+        font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+        font-size: 0.9rem;
+    }
+    
+    .action-btn {
+        transition: all 0.2s;
+    }
+    
+    .action-btn:hover {
+        transform: translateY(-1px);
+    }
 </style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-sm-flex align-items-center justify-content-between mb-4">
+        <div>
+            <h1 class="h3 mb-0 text-gray-800">Log Files</h1>
+            <p class="text-muted mb-0">System log files and error reports</p>
+        </div>
+        <div class="d-flex gap-2">
+            <button class="btn btn-sm btn-primary shadow-sm" id="refreshLogs">
+                <i class="bi bi-arrow-repeat"></i> Refresh Logs
+            </button>
+            <a href="{{ url_for('dashboard') }}" class="btn btn-sm btn-secondary shadow-sm">
+                <i class="bi bi-arrow-left"></i> Back to Dashboard
+            </a>
+        </div>
+    </div>
+
+    <!-- Log Files Card -->
+    <div class="card shadow mb-4 log-card">
+        <div class="card-header py-3 d-flex justify-content-between align-items-center bg-white">
+            <div class="d-flex align-items-center">
+                <i class="bi bi-journal-text text-primary me-2"></i>
+                <h6 class="m-0 font-weight-bold text-primary">Available Log Files</h6>
+            </div>
+            <span class="badge bg-info">{{ log_files|length if log_files else 0 }} Files</span>
+        </div>
+        <div class="card-body">
+            {% if log_files %}
+            <div class="table-responsive">
+                <table class="table table-hover align-middle" id="logsTable" width="100%" cellspacing="0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Filename</th>
+                            <th>Size</th>
+                            <th>Last Modified</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for log in log_files %}
+                        <tr>
+                            <td>
+                                <div class="d-flex align-items-center">
+                                    <i class="bi bi-file-text text-secondary me-2"></i>
+                                    <span class="log-file-name">{{ log.name }}</span>
+                                </div>
+                            </td>
+                            <td>{{ (log.size / 1024)|round(2) }} KB</td>
+                            <td>{{ log.modified }}</td>
+                            <td>
+                                <div class="d-flex gap-2">
+                                    <a href="{{ url_for('view_log', filename=log.name) }}" class="btn btn-sm btn-outline-primary action-btn">
+                                        <i class="bi bi-eye"></i> View
+                                    </a>
+                                    <button class="btn btn-sm btn-outline-info action-btn preview-toggle" 
+                                            data-log-id="{{ loop.index }}">
+                                        <i class="bi bi-file-text"></i> Preview
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            
+            <!-- Log Previews (separated from the table) -->
+            <div class="log-previews mt-3">
+                {% for log in log_files %}
+                <div class="card mb-3 d-none preview-card" id="preview-{{ loop.index }}">
+                    <div class="card-header py-2 bg-light">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <h6 class="m-0 font-weight-bold">{{ log.name }} - Preview</h6>
+                            <button type="button" class="btn-close preview-close" data-log-id="{{ loop.index }}"></button>
+                        </div>
+                    </div>
+                    <div class="card-body p-0">
+                        <pre class="log-preview m-0">{{ log.preview }}</pre>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="alert alert-info d-flex align-items-center">
+                <i class="bi bi-info-circle me-2"></i> 
+                <span>No log files found. Application logs will appear here when available.</span>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
 <script>
-    // Initialize DataTable for logs
     $(document).ready(function() {
+        // Initialize DataTable for logs
         $('#logsTable').DataTable({
             order: [[2, 'desc']], // Sort by last modified descending
-            pageLength: 10
+            pageLength: 10,
+            responsive: true
+        });
+        
+        // Preview toggle functionality
+        $('.preview-toggle').on('click', function() {
+            const logId = $(this).data('log-id');
+            const previewCard = $(`#preview-${logId}`);
+            
+            // Hide all other previews
+            $('.preview-card').addClass('d-none');
+            
+            // Show this preview
+            previewCard.removeClass('d-none');
+            
+            // Scroll to the preview
+            $('html, body').animate({
+                scrollTop: previewCard.offset().top - 100
+            }, 200);
+        });
+        
+        // Close preview button
+        $('.preview-close').on('click', function() {
+            const logId = $(this).data('log-id');
+            $(`#preview-${logId}`).addClass('d-none');
         });
     });
     
     // Refresh button
     document.getElementById('refreshLogs').addEventListener('click', function() {
+        this.disabled = true;
+        this.innerHTML = '<i class="bi bi-arrow-repeat bi-spin"></i> Refreshing...';
         window.location.reload();
     });
 </script>

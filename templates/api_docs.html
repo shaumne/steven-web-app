@@ -2,24 +2,190 @@
 
 {% block title %}API Documentation - Trading Bot{% endblock %}
 
+{% block extra_css %}
+<style>
+    .method-badge {
+        font-size: 0.75rem;
+        font-weight: 600;
+        padding: 0.3rem 0.6rem;
+        border-radius: 4px;
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+    }
+    
+    .method-badge-get {
+        background-color: rgba(44, 110, 203, 0.15);
+        color: #2c6ecb;
+    }
+    
+    .method-badge-post {
+        background-color: rgba(40, 167, 69, 0.15);
+        color: #28a745;
+    }
+    
+    .method-badge-put {
+        background-color: rgba(255, 193, 7, 0.15);
+        color: #e6a100;
+    }
+    
+    .method-badge-delete {
+        background-color: rgba(220, 53, 69, 0.15);
+        color: #dc3545;
+    }
+    
+    .endpoint-url {
+        font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+        font-size: 0.95rem;
+        color: var(--text-primary);
+        font-weight: 500;
+    }
+    
+    .endpoint-card {
+        transition: all 0.2s ease;
+        border-left: 4px solid transparent;
+    }
+    
+    .endpoint-card-get {
+        border-left-color: #2c6ecb;
+    }
+    
+    .endpoint-card-post {
+        border-left-color: #28a745;
+    }
+    
+    .endpoint-card-put {
+        border-left-color: #e6a100;
+    }
+    
+    .endpoint-card-delete {
+        border-left-color: #dc3545;
+    }
+    
+    .endpoint-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.08);
+    }
+    
+    .code-block {
+        background-color: #f8f9fa;
+        padding: 1rem;
+        border-radius: 8px;
+        font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+        color: #333;
+        font-size: 0.9rem;
+        border: 1px solid rgba(0, 0, 0, 0.08);
+        overflow-x: auto;
+    }
+    
+    .response-container {
+        border-radius: 8px;
+        overflow: hidden;
+    }
+    
+    .param-required {
+        background-color: rgba(220, 53, 69, 0.15);
+        color: #dc3545;
+        font-size: 0.7rem;
+        padding: 0.2rem 0.4rem;
+        border-radius: 3px;
+        font-weight: 600;
+    }
+    
+    .param-optional {
+        background-color: rgba(108, 117, 125, 0.15);
+        color: #6c757d;
+        font-size: 0.7rem;
+        padding: 0.2rem 0.4rem;
+        border-radius: 3px;
+        font-weight: 600;
+    }
+    
+    .param-name {
+        font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+        color: #2c6ecb;
+    }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="container-fluid">
-    <div class="d-flex align-items-center justify-content-between mb-4">
-        <h1 class="h3 mb-0 text-gray-800">API Documentation</h1>
+    <!-- Header Section -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="d-flex align-items-center justify-content-between mb-2">
+                <h1 class="h3 mb-0 fw-bold">API Documentation</h1>
+                <div>
+                    <span class="badge bg-light text-primary p-2 shadow-sm">Version 1.0</span>
+                </div>
+            </div>
+            <p class="text-muted">Comprehensive documentation for the Trading Bot RESTful API</p>
+        </div>
     </div>
 
+    <!-- Overview Card -->
     <div class="row mb-4">
         <div class="col-12">
             <div class="card shadow">
-                <div class="card-header py-3">
-                    <h6 class="m-0 font-weight-bold text-primary">Overview</h6>
+                <div class="card-header py-3 d-flex align-items-center">
+                    <i class="bi bi-info-circle me-2 text-primary"></i>
+                    <h6 class="m-0 font-weight-bold">Overview</h6>
                 </div>
                 <div class="card-body">
-                    <p>The Trading Bot API provides endpoints for interacting with the trading system, managing positions, checking market details, and more.</p>
-                    <p>Base URL: <code>https://{{ base_url|default('your-domain.com') }}</code></p>
-                    <p>All requests to the API endpoints return responses in JSON format.</p>
+                    <div class="row">
+                        <div class="col-lg-8">
+                            <p>The Trading Bot API provides endpoints for interacting with the trading system, managing positions, checking market details, and more. All endpoints require authentication unless specifically noted.</p>
+                            
+                            <div class="mb-3">
+                                <h6 class="fw-bold">Base URL</h6>
+                                <div class="code-block mb-2">https://{{ base_url|default('your-domain.com') }}</div>
+                            </div>
+                            
+                            <div class="mb-2">
+                                <h6 class="fw-bold">Response Format</h6>
+                                <p>All API endpoints return responses in JSON format with consistent status codes:</p>
+                                <ul class="mb-0">
+                                    <li><strong>200</strong> - Success</li>
+                                    <li><strong>400</strong> - Bad request (invalid parameters)</li>
+                                    <li><strong>401</strong> - Unauthorized (authentication required)</li>
+                                    <li><strong>404</strong> - Resource not found</li>
+                                    <li><strong>500</strong> - Server error</li>
+                                </ul>
+                            </div>
+                        </div>
+                        <div class="col-lg-4">
+                            <div class="card bg-light border-0">
+                                <div class="card-body">
+                                    <h6 class="fw-bold mb-3">API Features</h6>
+                                    <div class="d-flex align-items-center mb-2">
+                                        <i class="bi bi-graph-up-arrow text-primary me-2"></i>
+                                        <span>Trading Automation</span>
+                                    </div>
+                                    <div class="d-flex align-items-center mb-2">
+                                        <i class="bi bi-search text-primary me-2"></i>
+                                        <span>Market Discovery</span>
+                                    </div>
+                                    <div class="d-flex align-items-center mb-2">
+                                        <i class="bi bi-list-check text-primary me-2"></i>
+                                        <span>Position Management</span>
+                                    </div>
+                                    <div class="d-flex align-items-center">
+                                        <i class="bi bi-clock-history text-primary me-2"></i>
+                                        <span>Trade History</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
+        </div>
+    </div>
+
+    <!-- API Endpoints Section -->
+    <div class="row mb-3">
+        <div class="col-12">
+            <h5 class="fw-bold pb-2 border-bottom"><i class="bi bi-hdd-network me-2 text-primary"></i> API Endpoints</h5>
         </div>
     </div>
 
@@ -27,34 +193,41 @@
     <div class="row">
         <div class="col-12">
             <!-- Webhook Endpoint -->
-            <div class="card shadow mb-4 endpoint-card">
-                <div class="card-header py-3">
-                    <h6 class="m-0 font-weight-bold text-primary">
-                        <span class="badge bg-success me-2">POST</span> /webhook
-                    </h6>
+            <div class="card shadow mb-4 endpoint-card endpoint-card-post">
+                <div class="card-header py-3 d-flex justify-content-between align-items-center">
+                    <div class="d-flex align-items-center">
+                        <span class="method-badge method-badge-post me-2">
+                            <i class="bi bi-plus-circle-fill"></i> POST
+                        </span>
+                        <h6 class="m-0 font-weight-bold endpoint-url">/webhook</h6>
+                    </div>
+                    <span class="badge bg-success text-white">Public</span>
                 </div>
                 <div class="card-body">
-                    <h5>Description</h5>
-                    <p>Processes webhook alerts from TradingView and executes trades based on the alert data.</p>
-                    
-                    <h5>Request Format</h5>
-                    <p>The webhook expects alerts in the following format:</p>
-                    <pre class="bg-light p-3"><code>TICKER DIRECTION OPENING_PRICE ATR1 ATR2 ATR3 ATR4 ATR5 ATR6 ATR7 ATR8 ATR9 ATR10</code></pre>
-                    
-                    <p>Example alert message:</p>
-                    <pre class="bg-light p-3"><code>BATS:PML UP 7.51 50.53 48.22 45.44 42.65 41.23 40.89 40.55 40.22 40.09 40.01</code></pre>
-                    
-                    <h5>Response</h5>
-                    <p>Returns a JSON object with the status of the trade execution.</p>
-                    
-                    <div class="mt-3">
-                        <button class="btn btn-sm btn-outline-primary btn-api" type="button" data-bs-toggle="collapse" data-bs-target="#webhook-example" aria-expanded="false">
-                            Example Response
-                        </button>
+                    <div class="mb-3">
+                        <h5 class="fw-bold">Description</h5>
+                        <p>Processes webhook alerts from TradingView and executes trades based on the alert data.</p>
                     </div>
-                    <div class="collapse mt-2" id="webhook-example">
-                        <div class="card card-body">
-<pre><code>{
+                    
+                    <div class="mb-3">
+                        <h5 class="fw-bold">Request Format</h5>
+                        <p>The webhook expects alerts in the following format:</p>
+                        <div class="code-block mb-3">TICKER DIRECTION OPENING_PRICE ATR1 ATR2 ATR3 ATR4 ATR5 ATR6 ATR7 ATR8 ATR9 ATR10</div>
+                        
+                        <h6 class="fw-bold">Example</h6>
+                        <div class="code-block">BATS:PML UP 7.51 50.53 48.22 45.44 42.65 41.23 40.89 40.55 40.22 40.09 40.01</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <h5 class="fw-bold">Response</h5>
+                        <p>Returns a JSON object with the status of the trade execution.</p>
+                        
+                        <button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="collapse" data-bs-target="#webhook-example" aria-expanded="false">
+                            <i class="bi bi-code-square"></i> View Example Response
+                        </button>
+                        <div class="collapse mt-2 response-container" id="webhook-example">
+                            <div class="code-block mb-0">
+{
   "status": "success",
   "message": "Trade executed successfully",
   "trade_details": {
@@ -66,66 +239,76 @@
     "limit_level": 7.12,
     "deal_reference": "ABCDEF123456"
   }
-}</code></pre>
+}
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
 
             <!-- Markets Endpoint -->
-            <div class="card shadow mb-4 endpoint-card">
-                <div class="card-header py-3">
-                    <h6 class="m-0 font-weight-bold text-primary">
-                        <span class="badge bg-primary me-2">GET</span> /markets
-                    </h6>
+            <div class="card shadow mb-4 endpoint-card endpoint-card-get">
+                <div class="card-header py-3 d-flex justify-content-between align-items-center">
+                    <div class="d-flex align-items-center">
+                        <span class="method-badge method-badge-get me-2">
+                            <i class="bi bi-search"></i> GET
+                        </span>
+                        <h6 class="m-0 font-weight-bold endpoint-url">/markets</h6>
+                    </div>
+                    <span class="badge bg-primary text-white">Authenticated</span>
                 </div>
                 <div class="card-body">
-                    <h5>Description</h5>
-                    <p>Retrieves a list of available markets based on filtering criteria.</p>
-                    
-                    <h5>Parameters</h5>
-                    <table class="table table-bordered">
-                        <thead>
-                            <tr>
-                                <th>Parameter</th>
-                                <th>Type</th>
-                                <th>Required</th>
-                                <th>Description</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td><code>type</code></td>
-                                <td>string</td>
-                                <td>No</td>
-                                <td>Filter by instrument type (e.g., "spreadbet", "cfd")</td>
-                            </tr>
-                            <tr>
-                                <td><code>search</code></td>
-                                <td>string</td>
-                                <td>No</td>
-                                <td>Search term to find specific markets</td>
-                            </tr>
-                            <tr>
-                                <td><code>max_results</code></td>
-                                <td>integer</td>
-                                <td>No</td>
-                                <td>Maximum number of results to return (default: 50)</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                    
-                    <h5>Response</h5>
-                    <p>Returns a JSON object with a list of markets matching the specified criteria.</p>
-                    
-                    <div class="mt-3">
-                        <button class="btn btn-sm btn-outline-primary btn-api" type="button" data-bs-toggle="collapse" data-bs-target="#markets-example" aria-expanded="false">
-                            Example Response
-                        </button>
+                    <div class="mb-3">
+                        <h5 class="fw-bold">Description</h5>
+                        <p>Retrieves a list of available markets based on filtering criteria.</p>
                     </div>
-                    <div class="collapse mt-2" id="markets-example">
-                        <div class="card card-body">
-<pre><code>{
+                    
+                    <div class="mb-3">
+                        <h5 class="fw-bold">Parameters</h5>
+                        <div class="table-responsive">
+                            <table class="table table-bordered table-hover">
+                                <thead class="bg-light">
+                                    <tr>
+                                        <th>Parameter</th>
+                                        <th>Type</th>
+                                        <th>Status</th>
+                                        <th>Description</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td><span class="param-name">type</span></td>
+                                        <td>string</td>
+                                        <td><span class="param-optional">Optional</span></td>
+                                        <td>Filter by instrument type (e.g., "spreadbet", "cfd")</td>
+                                    </tr>
+                                    <tr>
+                                        <td><span class="param-name">search</span></td>
+                                        <td>string</td>
+                                        <td><span class="param-optional">Optional</span></td>
+                                        <td>Search term to find specific markets</td>
+                                    </tr>
+                                    <tr>
+                                        <td><span class="param-name">max_results</span></td>
+                                        <td>integer</td>
+                                        <td><span class="param-optional">Optional</span></td>
+                                        <td>Maximum number of results to return (default: 50)</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <h5 class="fw-bold">Response</h5>
+                        <p>Returns a JSON object with a list of markets matching the specified criteria.</p>
+                        
+                        <button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="collapse" data-bs-target="#markets-example" aria-expanded="false">
+                            <i class="bi bi-code-square"></i> View Example Response
+                        </button>
+                        <div class="collapse mt-2 response-container" id="markets-example">
+                            <div class="code-block mb-0">
+{
   "status": "success",
   "filter_type": "spreadbet",
   "search_term": "none",
@@ -148,54 +331,64 @@
       "spreadbet_compatible": true
     }
   ]
-}</code></pre>
+}
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
 
             <!-- Market Details Endpoint -->
-            <div class="card shadow mb-4 endpoint-card">
-                <div class="card-header py-3">
-                    <h6 class="m-0 font-weight-bold text-primary">
-                        <span class="badge bg-primary me-2">GET</span> /markets/{epic}
-                    </h6>
+            <div class="card shadow mb-4 endpoint-card endpoint-card-get">
+                <div class="card-header py-3 d-flex justify-content-between align-items-center">
+                    <div class="d-flex align-items-center">
+                        <span class="method-badge method-badge-get me-2">
+                            <i class="bi bi-search"></i> GET
+                        </span>
+                        <h6 class="m-0 font-weight-bold endpoint-url">/markets/{epic}</h6>
+                    </div>
+                    <span class="badge bg-primary text-white">Authenticated</span>
                 </div>
                 <div class="card-body">
-                    <h5>Description</h5>
-                    <p>Retrieves detailed information about a specific market identified by its EPIC code.</p>
-                    
-                    <h5>Parameters</h5>
-                    <table class="table table-bordered">
-                        <thead>
-                            <tr>
-                                <th>Parameter</th>
-                                <th>Type</th>
-                                <th>Required</th>
-                                <th>Description</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td><code>epic</code></td>
-                                <td>string</td>
-                                <td>Yes</td>
-                                <td>The EPIC code of the market</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                    
-                    <h5>Response</h5>
-                    <p>Returns a JSON object with detailed information about the specified market.</p>
-                    
-                    <div class="mt-3">
-                        <button class="btn btn-sm btn-outline-primary btn-api" type="button" data-bs-toggle="collapse" data-bs-target="#market-details-example" aria-expanded="false">
-                            Example Response
-                        </button>
+                    <div class="mb-3">
+                        <h5 class="fw-bold">Description</h5>
+                        <p>Retrieves detailed information about a specific market identified by its EPIC code.</p>
                     </div>
-                    <div class="collapse mt-2" id="market-details-example">
-                        <div class="card card-body">
-<pre><code>{
+                    
+                    <div class="mb-3">
+                        <h5 class="fw-bold">Parameters</h5>
+                        <div class="table-responsive">
+                            <table class="table table-bordered table-hover">
+                                <thead class="bg-light">
+                                    <tr>
+                                        <th>Parameter</th>
+                                        <th>Type</th>
+                                        <th>Status</th>
+                                        <th>Description</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td><span class="param-name">epic</span></td>
+                                        <td>string</td>
+                                        <td><span class="param-required">Required</span></td>
+                                        <td>The EPIC code of the market</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <h5 class="fw-bold">Response</h5>
+                        <p>Returns a JSON object with detailed information about the specified market.</p>
+                        
+                        <button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="collapse" data-bs-target="#market-details-example" aria-expanded="false">
+                            <i class="bi bi-code-square"></i> View Example Response
+                        </button>
+                        <div class="collapse mt-2 response-container" id="market-details-example">
+                            <div class="code-block mb-0">
+{
   "status": "success",
   "epic": "KA.D.DNLM.DAILY.IP",
   "market_details": {
@@ -229,34 +422,40 @@
       "max_deal_size_unit": null
     }
   }
-}</code></pre>
+}
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
 
             <!-- Positions Endpoint -->
-            <div class="card shadow mb-4 endpoint-card">
-                <div class="card-header py-3">
-                    <h6 class="m-0 font-weight-bold text-primary">
-                        <span class="badge bg-primary me-2">GET</span> /positions
-                    </h6>
+            <div class="card shadow mb-4 endpoint-card endpoint-card-get">
+                <div class="card-header py-3 d-flex justify-content-between align-items-center">
+                    <div class="d-flex align-items-center">
+                        <span class="method-badge method-badge-get me-2">
+                            <i class="bi bi-search"></i> GET
+                        </span>
+                        <h6 class="m-0 font-weight-bold endpoint-url">/positions</h6>
+                    </div>
+                    <span class="badge bg-primary text-white">Authenticated</span>
                 </div>
                 <div class="card-body">
-                    <h5>Description</h5>
-                    <p>Retrieves a list of all open positions.</p>
-                    
-                    <h5>Response</h5>
-                    <p>Returns a JSON object with a list of all open positions.</p>
-                    
-                    <div class="mt-3">
-                        <button class="btn btn-sm btn-outline-primary btn-api" type="button" data-bs-toggle="collapse" data-bs-target="#positions-example" aria-expanded="false">
-                            Example Response
-                        </button>
+                    <div class="mb-3">
+                        <h5 class="fw-bold">Description</h5>
+                        <p>Retrieves a list of all open positions.</p>
                     </div>
-                    <div class="collapse mt-2" id="positions-example">
-                        <div class="card card-body">
-<pre><code>{
+                    
+                    <div class="mb-3">
+                        <h5 class="fw-bold">Response</h5>
+                        <p>Returns a JSON object with a list of all open positions.</p>
+                        
+                        <button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="collapse" data-bs-target="#positions-example" aria-expanded="false">
+                            <i class="bi bi-code-square"></i> View Example Response
+                        </button>
+                        <div class="collapse mt-2 response-container" id="positions-example">
+                            <div class="code-block mb-0">
+{
   "status": "success",
   "count": 2,
   "positions": [
@@ -301,54 +500,64 @@
       }
     }
   ]
-}</code></pre>
+}
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
 
             <!-- EPIC Lookup Endpoint -->
-            <div class="card shadow mb-4 endpoint-card">
-                <div class="card-header py-3">
-                    <h6 class="m-0 font-weight-bold text-primary">
-                        <span class="badge bg-primary me-2">GET</span> /epic/lookup
-                    </h6>
+            <div class="card shadow mb-4 endpoint-card endpoint-card-get">
+                <div class="card-header py-3 d-flex justify-content-between align-items-center">
+                    <div class="d-flex align-items-center">
+                        <span class="method-badge method-badge-get me-2">
+                            <i class="bi bi-search"></i> GET
+                        </span>
+                        <h6 class="m-0 font-weight-bold endpoint-url">/epic/lookup</h6>
+                    </div>
+                    <span class="badge bg-primary text-white">Authenticated</span>
                 </div>
                 <div class="card-body">
-                    <h5>Description</h5>
-                    <p>Looks up the EPIC code for a given trading symbol.</p>
-                    
-                    <h5>Parameters</h5>
-                    <table class="table table-bordered">
-                        <thead>
-                            <tr>
-                                <th>Parameter</th>
-                                <th>Type</th>
-                                <th>Required</th>
-                                <th>Description</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td><code>symbol</code></td>
-                                <td>string</td>
-                                <td>Yes</td>
-                                <td>The trading symbol to look up (e.g., "BATS:PML")</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                    
-                    <h5>Response</h5>
-                    <p>Returns a JSON object with the EPIC code and additional details for the specified symbol.</p>
-                    
-                    <div class="mt-3">
-                        <button class="btn btn-sm btn-outline-primary btn-api" type="button" data-bs-toggle="collapse" data-bs-target="#epic-lookup-example" aria-expanded="false">
-                            Example Response
-                        </button>
+                    <div class="mb-3">
+                        <h5 class="fw-bold">Description</h5>
+                        <p>Looks up the EPIC code for a given trading symbol.</p>
                     </div>
-                    <div class="collapse mt-2" id="epic-lookup-example">
-                        <div class="card card-body">
-<pre><code>{
+                    
+                    <div class="mb-3">
+                        <h5 class="fw-bold">Parameters</h5>
+                        <div class="table-responsive">
+                            <table class="table table-bordered table-hover">
+                                <thead class="bg-light">
+                                    <tr>
+                                        <th>Parameter</th>
+                                        <th>Type</th>
+                                        <th>Status</th>
+                                        <th>Description</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td><span class="param-name">symbol</span></td>
+                                        <td>string</td>
+                                        <td><span class="param-required">Required</span></td>
+                                        <td>The trading symbol to look up (e.g., "BATS:PML")</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <h5 class="fw-bold">Response</h5>
+                        <p>Returns a JSON object with the EPIC code and additional details for the specified symbol.</p>
+                        
+                        <button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="collapse" data-bs-target="#epic-lookup-example" aria-expanded="false">
+                            <i class="bi bi-code-square"></i> View Example Response
+                        </button>
+                        <div class="collapse mt-2 response-container" id="epic-lookup-example">
+                            <div class="code-block mb-0">
+{
   "status": "success",
   "symbol": "BATS:PML",
   "epic": "KA.D.PML.DAILY.IP",
@@ -365,67 +574,78 @@
     "min_stop_distance": 1.0,
     "min_limit_distance": 1.0
   }
-}</code></pre>
+}
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- Additional Endpoints -->
+            <!-- Additional Endpoints Card -->
             <div class="card shadow mb-4">
-                <div class="card-header py-3">
-                    <h6 class="m-0 font-weight-bold text-primary">Additional Endpoints</h6>
+                <div class="card-header py-3 d-flex align-items-center">
+                    <i class="bi bi-grid-3x3-gap me-2 text-primary"></i>
+                    <h6 class="m-0 font-weight-bold">Additional Endpoints</h6>
                 </div>
                 <div class="card-body">
                     <div class="table-responsive">
-                        <table class="table table-bordered">
-                            <thead>
+                        <table class="table table-bordered table-hover">
+                            <thead class="bg-light">
                                 <tr>
                                     <th>Method</th>
                                     <th>Endpoint</th>
                                     <th>Description</th>
+                                    <th>Authentication</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 <tr>
-                                    <td><span class="badge bg-primary">GET</span></td>
-                                    <td><code>/position/status?reference={deal_reference}</code></td>
+                                    <td><span class="method-badge method-badge-get">GET</span></td>
+                                    <td class="endpoint-url">/position/status?reference={deal_reference}</td>
                                     <td>Check the status of a position by deal reference</td>
+                                    <td><span class="badge bg-primary text-white">Required</span></td>
                                 </tr>
                                 <tr>
-                                    <td><span class="badge bg-primary">GET</span></td>
-                                    <td><code>/position/status?ticker={ticker}</code></td>
+                                    <td><span class="method-badge method-badge-get">GET</span></td>
+                                    <td class="endpoint-url">/position/status?ticker={ticker}</td>
                                     <td>Check the status of a position by ticker symbol</td>
+                                    <td><span class="badge bg-primary text-white">Required</span></td>
                                 </tr>
                                 <tr>
-                                    <td><span class="badge bg-primary">GET</span></td>
-                                    <td><code>/position/today</code></td>
+                                    <td><span class="method-badge method-badge-get">GET</span></td>
+                                    <td class="endpoint-url">/position/today</td>
                                     <td>Get all trades made today</td>
+                                    <td><span class="badge bg-primary text-white">Required</span></td>
                                 </tr>
                                 <tr>
-                                    <td><span class="badge bg-primary">GET</span></td>
-                                    <td><code>/history/transactions?days={days}&max_results={max_results}</code></td>
+                                    <td><span class="method-badge method-badge-get">GET</span></td>
+                                    <td class="endpoint-url">/history/transactions</td>
                                     <td>Get transaction history with optional filtering</td>
+                                    <td><span class="badge bg-primary text-white">Required</span></td>
                                 </tr>
                                 <tr>
-                                    <td><span class="badge bg-primary">GET</span></td>
-                                    <td><code>/history/activity?days={days}&max_results={max_results}</code></td>
+                                    <td><span class="method-badge method-badge-get">GET</span></td>
+                                    <td class="endpoint-url">/history/activity</td>
                                     <td>Get activity history with optional filtering</td>
+                                    <td><span class="badge bg-primary text-white">Required</span></td>
                                 </tr>
                                 <tr>
-                                    <td><span class="badge bg-primary">GET</span></td>
-                                    <td><code>/history/all?days={days}&max_results={max_results}</code></td>
+                                    <td><span class="method-badge method-badge-get">GET</span></td>
+                                    <td class="endpoint-url">/history/all</td>
                                     <td>Get comprehensive trading history with optional filtering</td>
+                                    <td><span class="badge bg-primary text-white">Required</span></td>
                                 </tr>
                                 <tr>
-                                    <td><span class="badge bg-primary">GET</span></td>
-                                    <td><code>/health</code></td>
+                                    <td><span class="method-badge method-badge-get">GET</span></td>
+                                    <td class="endpoint-url">/health</td>
                                     <td>Check the health status of the API</td>
+                                    <td><span class="badge bg-success text-white">Public</span></td>
                                 </tr>
                                 <tr>
-                                    <td><span class="badge bg-primary">GET</span></td>
-                                    <td><code>/test</code></td>
+                                    <td><span class="method-badge method-badge-get">GET</span></td>
+                                    <td class="endpoint-url">/test</td>
                                     <td>Test endpoint to verify the bot is working</td>
+                                    <td><span class="badge bg-success text-white">Public</span></td>
                                 </tr>
                             </tbody>
                         </table>
