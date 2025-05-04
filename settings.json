@@ -1,8 +1,8 @@
 {
     "api": {
         "ig_username": "mailbox_sm",
-        "ig_password": "Kenilworth123",
-        "ig_api_key": "6f17bcadc89fac93cbde9f68198083692901f0c2",
+        "ig_password": "*************",
+        "ig_api_key": "****************************************",
         "ig_account_type": "DEMO"
     },
     "trading": {
@@ -11,8 +11,8 @@
         "csv_file_path": "ticker_data.csv"
     },
     "validation": {
-        "check_existing_position": false,
-        "check_same_day_trades": false,
+        "check_existing_position": true,
+        "check_same_day_trades": true,
         "check_open_position_limit": true,
         "check_alert_timestamp": true,
         "check_dividend_date": true
