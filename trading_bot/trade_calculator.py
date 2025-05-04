@@ -250,7 +250,7 @@ class TradeCalculator:
             logger.info(f"Raw position size calculation: {max_position_size_gbp} GBP / {entry_price} = {position_size_raw}")
             
             # IG Markets için doğru pozisyon boyutu formatı - sadece 1 ondalık basamak
-            position_size = round(position_size_raw, 1)  # Sadece 1 ondalık basamak - IG API sınırlaması
+            position_size = round(position_size_raw, 2)  # İki ondalık basamak kullan (eskiden 1 idi)
             
             # Serco örneğindeki sorunu çözmek için özel durum kontrolü
             # entry_price = 176.851, position_size_raw = 56.54, position_size = 56.5
@@ -259,7 +259,7 @@ class TradeCalculator:
                 logger.info(f"Position size seems large ({position_size}) for price {entry_price}, keeping as is")
             # Eğer yüksek fiyatlı hisse ise ve hesaplanan değer de büyükse 100'e böl
             elif entry_price > 800 and position_size > 10:
-                position_size = round(position_size / 100, 1)
+                position_size = round(position_size / 100, 2)  # İki ondalık basamak kullan (eskiden 1 idi)
                 logger.warning(f"Adjusting high position size for high price: {position_size}")
             
             # Log all parameters for easier debugging
@@ -280,9 +280,9 @@ class TradeCalculator:
                 'original_price': round(original_price, 4),  # TradingView'dan gelen orijinal fiyat
                 'price_level': round(price_level, 4),        # Hesaplanan gerçek fiyat seviyesi (DOWN için %98)
                 'entry_price': round(entry_price, 4),        # Normalize edilmiş fiyat
-                'stop_distance': round(stop_distance, 1),    # 1 ondalık basamak için yuvarlanmış
-                'limit_distance': round(limit_distance, 1),  # 1 ondalık basamak için yuvarlanmış
-                'position_size': position_size,
+                'stop_distance': round(stop_distance, 2),    # 2 ondalık basamak için yuvarlanmış (eskiden 1 idi)
+                'limit_distance': round(limit_distance, 2),  # 2 ondalık basamak için yuvarlanmış (eskiden 1 idi)
+                'position_size': round(position_size, 2),    # Tutarlı olması için burayı da round içine aldım
                 'max_position_size_gbp': max_position_size_gbp
             }
             

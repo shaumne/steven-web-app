@@ -407,8 +407,8 @@ class TradeManager:
             logger.info(f"TradingView fiyatı: {original_price}, Hesaplanan Fiyat Seviyesi: {price_level}")
             logger.info(f"IG Formatında Limit Seviyesi: {limit_level}")
             logger.info(f"Yön: {trade_params['direction']}, Boyut: {trade_params['position_size']}")
-            logger.info(f"Stop Distance: {final_stop_distance}")
-            logger.info(f"Limit Distance: {final_limit_distance}")
+            logger.info(f"Stop Distance: {final_stop_distance:.2f}")
+            logger.info(f"Limit Distance: {final_limit_distance:.2f}")
             
             # ADIM 6: Pozisyon oluştur
             # IG API mesafeleri (distance) kullanıyor seviyeler (level) değil
@@ -441,20 +441,24 @@ class TradeManager:
             
             if final_stop_distance > max_reasonable_distance:
                 logger.warning(f"Stop distance {final_stop_distance} is suspiciously large (>{max_reasonable_distance}). Adjusting.")
-                final_stop_distance = round(final_stop_distance / 100, 1)
+                final_stop_distance = round(final_stop_distance / 100, 2)  # 2 ondalık basamak kullan (eskiden 1 idi)
                 
             if final_limit_distance > max_reasonable_distance:
                 logger.warning(f"Limit distance {final_limit_distance} is suspiciously large (>{max_reasonable_distance}). Adjusting.")
-                final_limit_distance = round(final_limit_distance / 100, 1)
+                final_limit_distance = round(final_limit_distance / 100, 2)  # 2 ondalık basamak kullan (eskiden 1 idi)
             
-            # IG API için değerleri formatla
-            # IG API fazla ondalık basamak kabul etmiyor - size, stop_distance ve limit_distance değerlerini yuvarlayalım
-            position_size = round(position_size, 1)  # Sadece 1 ondalık basamak
-            final_stop_distance = round(final_stop_distance, 1)  # Sadece 1 ondalık basamak
-            final_limit_distance = round(final_limit_distance, 1)  # Sadece 1 ondalık basamak
+            # Log mesafe değerlerini kontrol et ve sonuçları yazdır
+            logger.info(f"Stop Distance: {final_stop_distance:.2f}")
+            logger.info(f"Limit Distance: {final_limit_distance:.2f}")
             
-            # Son durumu logla
-            logger.info(f"FINAL VALUES - Size: {position_size}, Stop: {final_stop_distance}, Limit: {final_limit_distance}")
+            # Sayısal formatlama konusundaki tutarsızlıkları düzeltmek için
+            # son değerleri kesin formatlar ile tanımlayalım
+            final_stop_distance = round(final_stop_distance, 2)
+            final_limit_distance = round(final_limit_distance, 2)
+            position_size = round(position_size, 2)
+            
+            # Son durumu logla - sabit formatla göstermek için .2f kullanıyoruz
+            logger.info(f"FINAL VALUES - Size: {position_size:.2f}, Stop: {final_stop_distance:.2f}, Limit: {final_limit_distance:.2f}")
             
             # API çağrısını yap
             result = self.ig_client.create_position(

@@ -12,7 +12,7 @@
     },
     "validation": {
         "check_existing_position": false,
-        "check_same_day_trades": true,
+        "check_same_day_trades": false,
         "check_open_position_limit": true,
         "check_alert_timestamp": true,
         "check_dividend_date": true

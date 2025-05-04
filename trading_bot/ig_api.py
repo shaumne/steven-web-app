@@ -532,7 +532,7 @@ class IGClient:
             "epic": epic,
             "expiry": expiry,
             "direction": direction,
-            "size": str(size),
+            "size": f"{round(float(size), 2):.2f}",
             "orderType": "MARKET",
             "timeInForce": "FILL_OR_KILL",
             "guaranteedStop": False,
@@ -542,10 +542,10 @@ class IGClient:
         
         # Only add stop/limit if they're non-zero
         if stop_distance > 0:
-            payload["stopDistance"] = str(stop_distance)
+            payload["stopDistance"] = f"{round(stop_distance, 2):.2f}"
             
         if limit_distance > 0:
-            payload["limitDistance"] = str(limit_distance)
+            payload["limitDistance"] = f"{round(limit_distance, 2):.2f}"
         
         logger.info(f"Creating MARKET {direction} position for {epic} with size {size}")
         logger.info(f"Stop distance: {stop_distance}, Limit distance: {limit_distance}")
@@ -885,8 +885,8 @@ class IGClient:
             "epic": epic,
             "expiry": expiry,
             "direction": direction,
-            "size": str(size),
-            "level": str(order_level),
+            "size": f"{round(float(size), 2):.2f}",
+            "level": f"{round(float(order_level), 4):.4f}",
             "type": order_type,
             "timeInForce": "GOOD_TILL_CANCELLED",
             "guaranteedStop": guaranteed_stop,
@@ -896,10 +896,10 @@ class IGClient:
         
         # Add stop and limit if provided (and non-zero)
         if stop_distance and float(stop_distance) > 0:
-            payload["stopDistance"] = str(stop_distance)
+            payload["stopDistance"] = f"{round(float(stop_distance), 2):.2f}"
         
         if limit_distance and float(limit_distance) > 0:
-            payload["limitDistance"] = str(limit_distance)
+            payload["limitDistance"] = f"{round(float(limit_distance), 2):.2f}"
         
         # Create the working order
         working_order_url = f"{self.BASE_URL}/workingorders/otc"
@@ -991,9 +991,9 @@ class IGClient:
                 "epic": epic,
                 "expiry": expiry,
                 "direction": direction,
-                "size": str(size),
+                "size": f"{round(float(size), 2):.2f}",
                 "orderType": "LIMIT",
-                "level": str(limit_level),
+                "level": f"{round(float(limit_level), 4):.4f}",
                 "forceOpen": True,
                 "guaranteedStop": False,
                 "timeInForce": "EXECUTE_AND_ELIMINATE",
@@ -1002,10 +1002,10 @@ class IGClient:
             
             # Add stop and limit if provided
             if stop_distance > 0:
-                payload["stopDistance"] = str(stop_distance)
+                payload["stopDistance"] = f"{round(stop_distance, 2):.2f}"
                 
             if limit_distance > 0:
-                payload["limitDistance"] = str(limit_distance)
+                payload["limitDistance"] = f"{round(limit_distance, 2):.2f}"
                 
             # Define the API endpoint
             endpoint = f"{self.BASE_URL}/positions/otc"
@@ -1022,8 +1022,8 @@ class IGClient:
                 "epic": epic,
                 "expiry": expiry,
                 "direction": direction,
-                "size": str(size),
-                "level": str(limit_level),
+                "size": f"{round(float(size), 2):.2f}",
+                "level": f"{round(float(limit_level), 4):.4f}",
                 "type": order_type,
                 "currencyCode": "GBP",
                 "timeInForce": "GOOD_TILL_CANCELLED",
@@ -1033,10 +1033,10 @@ class IGClient:
             
             # Add stop and limit if provided
             if stop_distance > 0:
-                payload["stopDistance"] = str(stop_distance)
+                payload["stopDistance"] = f"{round(stop_distance, 2):.2f}"
                 
             if limit_distance > 0:
-                payload["limitDistance"] = str(limit_distance)
+                payload["limitDistance"] = f"{round(limit_distance, 2):.2f}"
                 
             # Define the API endpoint
             endpoint = f"{self.BASE_URL}/workingorders/otc"

@@ -1,4 +1,4 @@
-Symbol,IG EPIC,ATR Stop Loss Period,ATR Stop Loss Multiple,ATR Profit Target Period,ATR Profit Multiple,Postion Size Max GBP,Opening Price Multiple,Next dividend date
+﻿Symbol,IG EPIC,ATR Stop Loss Period,ATR Stop Loss Multiple,ATR Profit Target Period,ATR Profit Multiple,Postion Size Max GBP,Opening Price Multiple,Next dividend date
 ASX_DLY:IFL,,9,156,3,102,10000,101.2,
 ASX_DLY:BOQ,,8,334,6,182,10000,97.0,
 ASX_DLY:CGF,,5,112,7,130,10000,102.6,
@@ -39,7 +39,7 @@ BATS:SMFG,,6,155,9,78,10000,103.0,
 BATS:IDCC,,4,223,4,200,10000,101.0,
 BATS:KD,,1,333,3,100,10000,97.6,
 BATS:KTOS,,10,340,6,192,10000,104.0,
-LSE_DLY:SRP,KA.D.SRP.DAILY.IP,4,189,6,180,10000,101.0,
+LSE_DLY:SRP,KA.D.SRP.DAILY.IP,4,189,6,180,10000,102,
 LSE_DLY:GFTU,,9,124,5,70,10000,97.0,
 LSE_DLY:OSB,,1,232,4,264,10000,100.0,
 LSE_DLY:VOD,,2,76,3,248,10000,100.0,
