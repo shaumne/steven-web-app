@@ -115,50 +115,7 @@
                 </div>
             </div>
         </div>
-        <div class="col-md-3 col-sm-6 mb-3">
-            <div class="card stats-card">
-                <div class="card-body d-flex align-items-center">
-                    {% set total_profit = 0 %}
-                    {% for position in positions %}
-                        {% if position.profit is not none %}
-                            {% set total_profit = total_profit + position.profit %}
-                        {% endif %}
-                    {% endfor %}
-                    
-                    <div class="stats-icon {% if total_profit >= 0 %}profit-positive{% else %}profit-negative{% endif %} rounded me-3">
-                        <i class="bi {% if total_profit >= 0 %}bi-graph-up-arrow{% else %}bi-graph-down-arrow{% endif %}"></i>
-                    </div>
-                    <div>
-                        <div class="text-muted small">Total P/L</div>
-                        <div class="h5 mb-0 font-weight-bold">{{ total_profit }} GBP</div>
-                    </div>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-3 col-sm-6 mb-3">
-            <div class="card stats-card">
-                <div class="card-body d-flex align-items-center">
-                    {% set buy_count = 0 %}
-                    {% set sell_count = 0 %}
-                    
-                    {% for position in positions %}
-                        {% if position.direction == 'BUY' %}
-                            {% set buy_count = buy_count + 1 %}
-                        {% elif position.direction == 'SELL' %}
-                            {% set sell_count = sell_count + 1 %}
-                        {% endif %}
-                    {% endfor %}
-                    
-                    <div class="stats-icon bg-positions rounded me-3">
-                        <i class="bi bi-bar-chart"></i>
-                    </div>
-                    <div>
-                        <div class="text-muted small">BUY/SELL Ratio</div>
-                        <div class="h5 mb-0 font-weight-bold">{{ buy_count }}/{{ sell_count }}</div>
-                    </div>
-                </div>
-            </div>
-        </div>
+        
     </div>
 
     <!-- Open Positions -->
@@ -223,25 +180,13 @@
                             <td>{{ position.stopLevel if position.stopLevel is not none else 'N/A' }}</td>
                             <td>{{ position.limitLevel if position.limitLevel is not none else 'N/A' }}</td>
                             <td>
-                                <span class="{% if position.profit is not none and position.profit > 0 %}text-success fw-bold{% elif position.profit is not none and position.profit < 0 %}text-danger fw-bold{% endif %}">
-                                    {% if position.profit is not none %}
-                                        {% if position.profit > 0 %}+{% endif %}{{ position.profit }} {{ position.currency if position.currency is not none else 'GBP' }}
-                                    {% else %}
-                                        {% if position.direction == 'BUY' and position.level is not none and position.offer is not none %}
-                                            {% set calc_profit = (position.offer - position.level) * position.size %}
-                                            <span class="{% if calc_profit > 0 %}text-success fw-bold{% elif calc_profit < 0 %}text-danger fw-bold{% endif %}">
-                                                {% if calc_profit > 0 %}+{% endif %}{{ calc_profit | round(2) }} GBP
-                                            </span>
-                                        {% elif position.direction == 'SELL' and position.level is not none and position.bid is not none %}
-                                            {% set calc_profit = (position.level - position.bid) * position.size %}
-                                            <span class="{% if calc_profit > 0 %}text-success fw-bold{% elif calc_profit < 0 %}text-danger fw-bold{% endif %}">
-                                                {% if calc_profit > 0 %}+{% endif %}{{ calc_profit | round(2) }} GBP
-                                            </span>
-                                        {% else %}
-                                            N/A
-                                        {% endif %}
-                                    {% endif %}
-                                </span>
+                                {% if position.profit is not none %}
+                                    <span class="text-{% if position.profit >= 0 %}success{% else %}danger{% endif %}">
+                                        {{ position.profit }} {{ position.currency if position.currency is not none else 'GBP' }}
+                                    </span>
+                                {% else %}
+                                    <span class="text-secondary">N/A</span>
+                                {% endif %}
                             </td>
                             <td>
                                 {% if position.dealId is not none %}

@@ -169,65 +169,6 @@
             </div>
         </div>
     </div>
-
-    <!-- Recent Trades -->
-    <div class="row">
-        <div class="col-12">
-            <div class="card shadow mb-4">
-                <div class="card-header py-3">
-                    <h6 class="m-0 font-weight-bold text-primary">Recent Trades</h6>
-                </div>
-                <div class="card-body">
-                    <div class="table-responsive">
-                        <table class="table table-bordered table-hover table-sm" id="recentTradesTable" width="100%" cellspacing="0">
-                            <thead>
-                                <tr>
-                                    <th>Time</th>
-                                    <th>Symbol</th>
-                                    <th>Direction</th>
-                                    <th>Price</th>
-                                    <th>Size</th>
-                                    <th>Status</th>
-                                    <th>Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% if recent_trades %}
-                                {% for trade in recent_trades %}
-                                <tr>
-                                    <td>{{ trade.time }}</td>
-                                    <td>{{ trade.symbol }}</td>
-                                    <td class="{% if trade.direction == 'BUY' %}text-success{% else %}text-danger{% endif %}">{{ trade.direction }}</td>
-                                    <td>{{ trade.price }}</td>
-                                    <td>{{ trade.size }}</td>
-                                    <td>
-                                        <span class="badge bg-{{ trade.status_color }}">{{ trade.status }}</span>
-                                    </td>
-                                    <td>
-                                        {% if trade.reference %}
-                                        <a href="{{ url_for('view_trade', reference=trade.reference) }}" class="btn btn-sm btn-primary">
-                                            <i class="bi bi-eye"></i>
-                                        </a>
-                                        {% else %}
-                                        <a href="{{ url_for('dashboard_positions') }}" class="btn btn-sm btn-secondary">
-                                            <i class="bi bi-list-check"></i>
-                                        </a>
-                                        {% endif %}
-                                    </td>
-                                </tr>
-                                {% endfor %}
-                                {% else %}
-                                <tr>
-                                    <td colspan="7" class="text-center">No recent trades found</td>
-                                </tr>
-                                {% endif %}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
 </div>
 {% endblock %}
 

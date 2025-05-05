@@ -1025,10 +1025,26 @@ def dashboard_positions():
     positions_response = webhook_handler.trade_manager.get_all_positions()
     positions = positions_response.get('positions', []) if positions_response.get('status') == 'success' else []
     
-    # Format profit levels if missing
+    # Calculate profit for each position if it's missing
     for position in positions:
+        # Format profit levels if missing
         if position.get('limitLevel') is None and position.get('profitLevel') is not None:
             position['limitLevel'] = position['profitLevel']
+            
+        # Calculate profit if missing
+        if position.get('profit') is None:
+            direction = position.get('direction')
+            level = float(position.get('level', 0))
+            size = float(position.get('size', 0))
+            
+            if direction == 'BUY' and position.get('offer') is not None:
+                # For BUY positions, profit = (current_offer - open_level) * size
+                current_price = float(position.get('offer', 0))
+                position['profit'] = round((current_price - level) * size, 2)
+            elif direction == 'SELL' and position.get('bid') is not None:
+                # For SELL positions, profit = (open_level - current_bid) * size
+                current_price = float(position.get('bid', 0))
+                position['profit'] = round((level - current_price) * size, 2)
     
     # Log positions
     logging.info(f"Positions data: {json.dumps(positions)}")
