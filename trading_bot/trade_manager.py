@@ -611,15 +611,38 @@ class TradeManager:
             market = position.get('market', {})
             pos = position.get('position', {})
             
+            # Get additional market details for stopLevel and limitLevel
+            try:
+                # Get deal ID and fetch its details to get stop and limit levels
+                deal_id = pos.get('dealId')
+                position_details = self.ig_client.get_position_by_deal_id(deal_id) if deal_id else None
+                
+                if position_details:
+                    # Extract stopLevel and limitLevel from position details
+                    stop_level = position_details.get('position', {}).get('stopLevel')
+                    limit_level = position_details.get('position', {}).get('limitLevel')
+                else:
+                    stop_level = None
+                    limit_level = None
+            except Exception as e:
+                logger.error(f"Error getting position details: {e}")
+                stop_level = None
+                limit_level = None
+            
             formatted_positions.append({
                 "epic": market.get('epic'),
-                "instrument_name": market.get('instrumentName'),
-                "deal_id": pos.get('dealId'),
+                "instrumentName": market.get('instrumentName'),
+                "dealId": pos.get('dealId'),
                 "direction": pos.get('direction'),
                 "size": pos.get('size'),
-                "open_level": pos.get('level'),
-                "profit": position.get('market', {}).get('profit', {}).get('value'),
-                "created_date": pos.get('createdDate')
+                "level": pos.get('level'),
+                "stopLevel": stop_level,
+                "limitLevel": limit_level,
+                "bid": market.get('bid'),
+                "offer": market.get('offer'),
+                "profit": market.get('profit', {}).get('value'),
+                "currency": market.get('profit', {}).get('currency', 'GBP'),
+                "createdDate": pos.get('createdDate')
             })
         
         return {

@@ -180,6 +180,8 @@
                             <th>Size</th>
                             <th>Open Level</th>
                             <th>Current Level</th>
+                            <th>Stop Level</th>
+                            <th>Profit Level</th>
                             <th>Profit/Loss</th>
                             <th>Actions</th>
                         </tr>
@@ -211,15 +213,33 @@
                                 {% elif position.direction == 'SELL' and position.bid is not none %}
                                     {{ position.bid }}
                                 {% else %}
-                                    N/A
+                                    {% if position.bid is not none and position.offer is not none %}
+                                        {{ ((position.bid + position.offer) / 2) | round(2) }}
+                                    {% else %}
+                                        N/A
+                                    {% endif %}
                                 {% endif %}
                             </td>
+                            <td>{{ position.stopLevel if position.stopLevel is not none else 'N/A' }}</td>
+                            <td>{{ position.limitLevel if position.limitLevel is not none else 'N/A' }}</td>
                             <td>
                                 <span class="{% if position.profit is not none and position.profit > 0 %}text-success fw-bold{% elif position.profit is not none and position.profit < 0 %}text-danger fw-bold{% endif %}">
                                     {% if position.profit is not none %}
                                         {% if position.profit > 0 %}+{% endif %}{{ position.profit }} {{ position.currency if position.currency is not none else 'GBP' }}
                                     {% else %}
-                                        N/A
+                                        {% if position.direction == 'BUY' and position.level is not none and position.offer is not none %}
+                                            {% set calc_profit = (position.offer - position.level) * position.size %}
+                                            <span class="{% if calc_profit > 0 %}text-success fw-bold{% elif calc_profit < 0 %}text-danger fw-bold{% endif %}">
+                                                {% if calc_profit > 0 %}+{% endif %}{{ calc_profit | round(2) }} GBP
+                                            </span>
+                                        {% elif position.direction == 'SELL' and position.level is not none and position.bid is not none %}
+                                            {% set calc_profit = (position.level - position.bid) * position.size %}
+                                            <span class="{% if calc_profit > 0 %}text-success fw-bold{% elif calc_profit < 0 %}text-danger fw-bold{% endif %}">
+                                                {% if calc_profit > 0 %}+{% endif %}{{ calc_profit | round(2) }} GBP
+                                            </span>
+                                        {% else %}
+                                            N/A
+                                        {% endif %}
                                     {% endif %}
                                 </span>
                             </td>
@@ -238,7 +258,7 @@
                         {% endfor %}
                         {% else %}
                         <tr>
-                            <td colspan="8" class="text-center py-4 text-muted">
+                            <td colspan="10" class="text-center py-4 text-muted">
                                 <i class="bi bi-info-circle me-1"></i> No open positions found
                             </td>
                         </tr>
@@ -268,6 +288,8 @@
                             <th>Type</th>
                             <th>Size</th>
                             <th>Level</th>
+                            <th>Stop Level</th>
+                            <th>Profit Level</th>
                             <th>Created Date</th>
                             <th>Actions</th>
                         </tr>
@@ -293,11 +315,16 @@
                             </td>
                             <td>
                                 <span class="status-badge bg-info text-white">
-                                    {{ order.orderType if order.orderType is not none else 'N/A' }}
+                                    {{ order.orderType if order.orderType is not none and order.orderType != '' else 'LIMIT' }}
                                 </span>
                             </td>
-                            <td>{{ order.size if order.size is not none else 'N/A' }}</td>
-                            <td>{{ order.level if order.level is not none else 'N/A' }}</td>
+                            <td>{{ order.size if order.size is not none and order.size != '' else 'N/A' }}</td>
+                            <td>{{ order.level if order.level is not none and order.level != '' else 'N/A' }}</td>
+                            <td>{{ order.stopLevel if order.stopLevel is not none and order.stopLevel != '' else 'N/A' }}</td>
+                            <td>{{ order.limitLevel if order.limitLevel is not none and order.limitLevel != '' 
+                                    else order.limitDistance if order.limitDistance is not none and order.limitDistance != '' 
+                                    else order.profitLevel if order.profitLevel is not none and order.profitLevel != '' 
+                                    else 'N/A' }}</td>
                             <td>{{ order.createdDate if order.createdDate is not none else 'N/A' }}</td>
                             <td>
                                 {% if order.dealId is not none %}
@@ -314,7 +341,7 @@
                         {% endfor %}
                         {% else %}
                         <tr>
-                            <td colspan="8" class="text-center py-4 text-muted">
+                            <td colspan="10" class="text-center py-4 text-muted">
                                 <i class="bi bi-info-circle me-1"></i> No working orders found
                             </td>
                         </tr>
@@ -354,7 +381,7 @@
             pageLength: 10,
             lengthMenu: [[5, 10, 25, 50, -1], [5, 10, 25, 50, "All"]],
             responsive: true,
-            order: [[6, 'desc']], // Sort by P/L initially
+            order: [[8, 'desc']], // Sort by P/L initially
             columns: [
                 null, // Deal ID
                 null, // Epic
@@ -362,16 +389,21 @@
                 null, // Size
                 null, // Open Level
                 null, // Current Level
+                null, // Stop Level
+                null, // Profit Level
                 null, // Profit/Loss
                 { orderable: false } // Actions column (not sortable)
-            ]
+            ],
+            language: {
+                emptyTable: "No open positions found"
+            }
         });
         
         $('#ordersTable').DataTable({
             pageLength: 10,
             lengthMenu: [[5, 10, 25, 50, -1], [5, 10, 25, 50, "All"]],
             responsive: true,
-            order: [[6, 'desc']], // Sort by created date initially
+            order: [[8, 'desc']], // Sort by created date initially
             columns: [
                 null, // Deal ID
                 null, // Epic
@@ -379,9 +411,14 @@
                 null, // Type
                 null, // Size
                 null, // Level
+                null, // Stop Level
+                null, // Profit Level
                 null, // Created Date
                 { orderable: false } // Actions column (not sortable)
-            ]
+            ],
+            language: {
+                emptyTable: "No working orders found"
+            }
         });
     });
 

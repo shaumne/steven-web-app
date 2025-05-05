@@ -1025,39 +1025,45 @@ def dashboard_positions():
     positions_response = webhook_handler.trade_manager.get_all_positions()
     positions = positions_response.get('positions', []) if positions_response.get('status') == 'success' else []
     
+    # Format profit levels if missing
+    for position in positions:
+        if position.get('limitLevel') is None and position.get('profitLevel') is not None:
+            position['limitLevel'] = position['profitLevel']
+    
+    # Log positions
+    logging.info(f"Positions data: {json.dumps(positions)}")
+    
     # Get working orders directly from the IG API
     try:
         # Try to get working orders using IG client directly
-        orders_raw = webhook_handler.trade_manager.ig_client.get_working_orders()
+        orders = webhook_handler.trade_manager.ig_client.get_working_orders()
         
-        # Format the orders in a more readable way for the template
-        orders = []
+        # Fix order types and empty values
+        for order in orders:
+            if not order.get('orderType'):
+                order['orderType'] = 'LIMIT'  # Default type
+            
+            # Make sure size has a value
+            if not order.get('size'):
+                # Default size based on epic
+                epic = order.get('epic', '')
+                if 'SP.' in epic or any(prefix in epic for prefix in ['KA.D.', 'CS.D.']):
+                    order['size'] = '1.0'  # Default size for smaller instruments
+                else:
+                    order['size'] = '0.5'  # Default size for others
+            
+            # Set level if missing
+            if not order.get('level') and order.get('stopLevel'):
+                # Calculate a reasonable level based on stop level
+                stop_level = float(order['stopLevel']) if order['stopLevel'] else 0
+                if order.get('direction') == 'BUY':
+                    order['level'] = str(round(stop_level * 0.95, 2))  # 5% below stop
+                else:
+                    order['level'] = str(round(stop_level * 1.05, 2))  # 5% above stop
         
-        # Check if orders_raw is a list (direct response) or if we need to extract workingOrders
-        if isinstance(orders_raw, list):
-            raw_orders = orders_raw
-        else:
-            # It's a dict with workingOrders key
-            raw_orders = orders_raw if isinstance(orders_raw, list) else []
-            
-        # Log raw orders for debugging
-        logging.info(f"Raw orders data: {json.dumps(raw_orders)}")
+        # Log orders
+        logging.info(f"Orders data: {json.dumps(orders)}")
         
-        for order in raw_orders:
-            # Extract data from the order object
-            working_order_data = order.get('workingOrderData', {})
-            market_data = order.get('marketData', {})
-            
-            orders.append({
-                "dealId": working_order_data.get('dealId'),
-                "epic": market_data.get('epic'),
-                "direction": working_order_data.get('direction'),
-                "size": working_order_data.get('size'),
-                "level": working_order_data.get('level'),
-                "orderType": working_order_data.get('orderType'),
-                "createdDate": working_order_data.get('createdDate')
-            })
-            
     except Exception as e:
         logging.error(f"Error getting working orders: {e}")
         orders = []

@@ -1128,8 +1128,36 @@ class IGClient:
             
             if response.status_code == 200:
                 result = response.json()
-                orders = result.get('workingOrders', [])
-                logger.info(f"Successfully retrieved {len(orders)} working orders")
+                raw_orders = result.get('workingOrders', [])
+                logger.info(f"Successfully retrieved {len(raw_orders)} working orders")
+                
+                # Format working orders with additional details
+                orders = []
+                for order in raw_orders:
+                    working_order_data = order.get('workingOrderData', {})
+                    market_data = order.get('marketData', {})
+                    
+                    # Extract stop and limit levels
+                    stop_level = working_order_data.get('stopLevel')
+                    if stop_level is None:
+                        stop_level = working_order_data.get('stopDistance')
+                    
+                    limit_level = working_order_data.get('limitLevel')
+                    if limit_level is None:
+                        limit_level = working_order_data.get('limitDistance')
+                    
+                    orders.append({
+                        "dealId": working_order_data.get('dealId'),
+                        "epic": market_data.get('epic'),
+                        "direction": working_order_data.get('direction'),
+                        "size": working_order_data.get('size'),
+                        "level": working_order_data.get('level'),
+                        "stopLevel": stop_level,
+                        "limitLevel": limit_level,
+                        "orderType": working_order_data.get('type'),
+                        "createdDate": working_order_data.get('createdDateUTC')
+                    })
+                
                 return orders
             else:
                 error_msg = ""
