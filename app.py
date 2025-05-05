@@ -1299,7 +1299,9 @@ def add_user():
     
     # Save users back to file
     try:
-        with open(webhook_handler.auth.USERS_FILE, 'w') as f:
+        # Import USERS_FILE from auth module
+        from trading_bot.auth import USERS_FILE
+        with open(USERS_FILE, 'w') as f:
             json.dump(users, f, indent=4)
         flash(f'User "{username}" added successfully', 'success')
     except Exception as e:
@@ -1328,7 +1330,9 @@ def delete_user(username):
     
     # Save users back to file
     try:
-        with open(webhook_handler.auth.USERS_FILE, 'w') as f:
+        # Import USERS_FILE from auth module
+        from trading_bot.auth import USERS_FILE
+        with open(USERS_FILE, 'w') as f:
             json.dump(users, f, indent=4)
         flash(f'User "{username}" deleted successfully', 'success')
     except Exception as e:
@@ -1360,7 +1364,9 @@ def change_password():
     
     # Save users back to file
     try:
-        with open(webhook_handler.auth.USERS_FILE, 'w') as f:
+        # Import USERS_FILE from auth module
+        from trading_bot.auth import USERS_FILE
+        with open(USERS_FILE, 'w') as f:
             json.dump(users, f, indent=4)
         flash(f'Password for "{username}" changed successfully', 'success')
     except Exception as e:
@@ -1659,7 +1665,7 @@ def get_orders():
 def cancel_order(deal_id):
     """Cancel a working order"""
     try:
-        # IG API tarafındaki çalışan emri iptal et
+        # Cancel the working order through the IG API
         result = webhook_handler.trade_manager.ig_client.cancel_working_order(deal_id)
         
         if result:
@@ -1689,7 +1695,7 @@ def download_activity_history_csv():
         days = request.args.get('days', default=7, type=int)
         max_results = request.args.get('max_results', default=100, type=int)
         
-        # pageSize değerini sınırla - IG API 1000 değerini kabul etmiyor
+        # Limit the pageSize - IG API does not accept values larger than 100
         if max_results > 100:
             max_results = 100
             
@@ -1698,7 +1704,7 @@ def download_activity_history_csv():
         
         # Ensure we have a valid session
         if not ig_client._ensure_session():
-            flash('IG oturumu açılamadı. Lütfen tekrar deneyin.', 'danger')
+            flash('Failed to connect to IG session. Please try again.', 'danger')
             return redirect(url_for('dashboard'))
         
         # Set default dates if not provided
@@ -1717,15 +1723,15 @@ def download_activity_history_csv():
         params = {
             'from': from_date_str,
             'to': to_date_str,
-            'pageSize': str(max_results),  # IG API string olarak bekliyor
-            'detailed': 'true'  # IG API string olarak bekliyor
+            'pageSize': str(max_results),  # IG API expects a string
+            'detailed': 'true'  # IG API expects a string
         }
         
         # Make the API request
         response = ig_client.session.get(url, params=params, headers=headers)
         
         if response.status_code != 200:
-            flash(f'IG API hatası: {response.status_code}', 'danger')
+            flash(f'IG API error: {response.status_code}', 'danger')
             return redirect(url_for('dashboard'))
         
         # Parse the JSON response
@@ -1733,7 +1739,7 @@ def download_activity_history_csv():
         activities = activities_data.get('activities', [])
         
         if not activities:
-            flash('Belirtilen tarih aralığında işlem bulunamadı.', 'warning')
+            flash('No transactions found in the specified date range.', 'warning')
             return redirect(url_for('dashboard'))
         
         # Create a DataFrame from the activities
@@ -1767,7 +1773,12 @@ def download_activity_history_csv():
         df = pd.DataFrame(activity_rows)
         
         # Prepare the file name with date range
-        account_id = session.get('user', {}).get('username', 'user')
+        # Fix for 'str' object has no attribute 'get'
+        if isinstance(session.get('user'), str):
+            account_id = session.get('user')
+        else:
+            account_id = session.get('user', {}).get('username', 'user')
+            
         file_name = f"ActivityHistory-{account_id}-({from_date.strftime('%d-%m-%Y')})-({to_date.strftime('%d-%m-%Y')}).csv"
         
         # Create a temporary file to store the CSV
@@ -1794,8 +1805,8 @@ def download_activity_history_csv():
         return return_data
         
     except Exception as e:
-        logging.error(f"CSV indirme hatası: {e}")
-        flash(f'CSV indirme sırasında hata oluştu: {str(e)}', 'danger')
+        logging.error(f"Error downloading CSV: {e}")
+        flash(f'Error occurred while downloading CSV: {str(e)}', 'danger')
         return redirect(url_for('dashboard'))
 
 @app.route('/api/history/activity', methods=['GET'])
@@ -1806,7 +1817,7 @@ def api_activity_history():
         days = request.args.get('days', default=7, type=int)
         max_results = request.args.get('max_results', default=100, type=int)
         
-        # pageSize değerini sınırla - IG API 1000 değerini kabul etmiyor
+        # Limit the pageSize - IG API does not accept values larger than 100
         if max_results > 100:
             max_results = 100
             
@@ -1833,15 +1844,15 @@ def api_activity_history():
         headers = ig_client.headers.copy()
         headers['Version'] = '3'
         
-        # IG API parametrelerini doğru formatta hazırla
+        # Prepare parameters in the correct format for IG API
         params = {
             'from': from_date_str,
             'to': to_date_str,
-            'pageSize': str(max_results),  # IG API string olarak bekliyor
-            'detailed': 'true'  # IG API string olarak bekliyor
+            'pageSize': str(max_results),  # IG API expects a string
+            'detailed': 'true'  # IG API expects a string
         }
         
-        # API isteğini yap
+        # Make the API request
         logging.info(f"Getting activity history from IG API: {url} with params: {params}")
         response = ig_client.session.get(url, params=params, headers=headers)
         
@@ -1883,19 +1894,19 @@ def api_activity_history():
 def update_dividend_dates():
     """Update dividend dates in ticker_data.csv using Yahoo Finance data"""
     try:
-        logging.info("Dividend dates update requested")  # Log için
+        logging.info("Dividend dates update requested")
         # Run the update function
         result = update_ticker_data_dividend_dates()
         
         if result:
-            logging.info("Dividend dates updated successfully")  # Başarılı log
+            logging.info("Dividend dates updated successfully")
             flash('Dividend dates updated successfully', 'success')
             return jsonify({
                 "status": "success",
                 "message": "Dividend dates updated successfully"
             })
         else:
-            logging.error("Error updating dividend dates")  # Hata logu
+            logging.error("Error updating dividend dates")
             flash('Error updating dividend dates', 'danger')
             return jsonify({
                 "status": "error",
