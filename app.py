@@ -1484,13 +1484,17 @@ def save_validation_rules():
                 'check_same_day_trades': validation.get('check_same_day_trades', True),
                 'check_open_position_limit': validation.get('check_open_position_limit', True),
                 'check_alert_timestamp': validation.get('check_alert_timestamp', True),
-                'check_dividend_date': validation.get('check_dividend_date', True)
+                'check_dividend_date': validation.get('check_dividend_date', True),
+                'check_max_deal_age': validation.get('check_max_deal_age', True),
+                'check_total_positions_and_orders': validation.get('check_total_positions_and_orders', True)
             }
         
         # Update trading settings
         if trading:
             settings['trading']['max_open_positions'] = trading.get('max_open_positions', 10)
             settings['trading']['alert_max_age_seconds'] = trading.get('alert_max_age_seconds', 5)
+            settings['trading']['max_deal_age_minutes'] = trading.get('max_deal_age_minutes', 60)
+            settings['trading']['max_total_positions_and_orders'] = trading.get('max_total_positions_and_orders', 10)
         
         # Save settings to JSON file
         with open(settings_path, 'w') as f:

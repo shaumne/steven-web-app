@@ -141,9 +141,20 @@
                                             <div class="text-muted small">Won't open more positions than allowed</div>
                                         </div>
                                         
+                                        <div class="mb-3 form-switch">
+                                            <input type="checkbox" class="form-check-input" id="checkTotalPositionsAndOrders" {% if validation.check_total_positions_and_orders %}checked{% endif %}>
+                                            <label class="form-check-label" for="checkTotalPositionsAndOrders">Check total positions and orders</label>
+                                            <div class="text-muted small">Limits total open positions + pending orders</div>
+                                        </div>
+                                        
                                         <div class="mb-3">
                                             <label for="maxOpenPositions" class="form-label">Maximum open positions</label>
                                             <input type="number" class="form-control" id="maxOpenPositions" value="{{ trading.max_open_positions }}">
+                                        </div>
+                                        
+                                        <div class="mb-3">
+                                            <label for="maxTotalPositionsAndOrders" class="form-label">Maximum positions + pending orders</label>
+                                            <input type="number" class="form-control" id="maxTotalPositionsAndOrders" value="{{ trading.max_total_positions_and_orders }}">
                                         </div>
                                     </div>
                                 </div>
@@ -167,9 +178,20 @@
                                             <div class="text-muted small">Ignores delayed signals</div>
                                         </div>
                                         
+                                        <div class="mb-3 form-switch">
+                                            <input type="checkbox" class="form-check-input" id="checkMaxDealAge" {% if validation.check_max_deal_age %}checked{% endif %}>
+                                            <label class="form-check-label" for="checkMaxDealAge">Auto cancel old pending orders</label>
+                                            <div class="text-muted small">Cancels pending orders older than specified minutes</div>
+                                        </div>
+                                        
                                         <div class="mb-3">
                                             <label for="alertMaxAge" class="form-label">Maximum signal age (seconds)</label>
                                             <input type="number" class="form-control" id="alertMaxAge" value="{{ trading.alert_max_age_seconds }}">
+                                        </div>
+                                        
+                                        <div class="mb-3">
+                                            <label for="maxDealAge" class="form-label">Maximum deal age (minutes)</label>
+                                            <input type="number" class="form-control" id="maxDealAge" value="{{ trading.max_deal_age_minutes }}">
                                         </div>
                                         
                                         <div class="mb-3 form-switch">
@@ -496,11 +518,15 @@
                     check_same_day_trades: $('#checkSameDayTrades').is(':checked'),
                     check_open_position_limit: $('#checkOpenPositionLimit').is(':checked'),
                     check_alert_timestamp: $('#checkAlertTimestamp').is(':checked'),
-                    check_dividend_date: $('#checkDividendDate').is(':checked')
+                    check_dividend_date: $('#checkDividendDate').is(':checked'),
+                    check_max_deal_age: $('#checkMaxDealAge').is(':checked'),
+                    check_total_positions_and_orders: $('#checkTotalPositionsAndOrders').is(':checked')
                 },
                 trading: {
                     max_open_positions: parseInt($('#maxOpenPositions').val()),
-                    alert_max_age_seconds: parseInt($('#alertMaxAge').val())
+                    alert_max_age_seconds: parseInt($('#alertMaxAge').val()),
+                    max_deal_age_minutes: parseInt($('#maxDealAge').val()),
+                    max_total_positions_and_orders: parseInt($('#maxTotalPositionsAndOrders').val())
                 }
             };
             

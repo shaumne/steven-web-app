@@ -8,13 +8,17 @@
     "trading": {
         "max_open_positions": 10,
         "alert_max_age_seconds": 5,
-        "csv_file_path": "ticker_data.csv"
+        "csv_file_path": "ticker_data.csv",
+        "max_deal_age_minutes": 60,
+        "max_total_positions_and_orders": 10
     },
     "validation": {
         "check_existing_position": true,
         "check_same_day_trades": true,
         "check_open_position_limit": true,
         "check_alert_timestamp": true,
-        "check_dividend_date": true
+        "check_dividend_date": true,
+        "check_max_deal_age": true,
+        "check_total_positions_and_orders": true
     }
 }

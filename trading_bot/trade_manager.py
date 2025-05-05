@@ -46,15 +46,19 @@ class TradeManager:
                 'check_open_position_limit': True,
                 'check_existing_position': True,
                 'check_alert_timestamp': True,
-                'check_dividend_date': True
+                'check_dividend_date': True,
+                'check_max_deal_age': True,
+                'check_total_positions_and_orders': True
             })
             
             # Load trading settings
             trading_settings = settings.get('trading', {})
             self.max_open_positions = trading_settings.get('max_open_positions', MAX_OPEN_POSITIONS)
             self.alert_max_age_seconds = trading_settings.get('alert_max_age_seconds', ALERT_MAX_AGE_SECONDS)
+            self.max_deal_age_minutes = trading_settings.get('max_deal_age_minutes', 60)
+            self.max_total_positions_and_orders = trading_settings.get('max_total_positions_and_orders', 10)
             
-            logger.info(f"Loaded settings: max_positions={self.max_open_positions}, alert_age={self.alert_max_age_seconds}, validation={self.validation_rules}")
+            logger.info(f"Loaded settings: max_positions={self.max_open_positions}, alert_age={self.alert_max_age_seconds}, max_deal_age={self.max_deal_age_minutes}, max_total={self.max_total_positions_and_orders}, validation={self.validation_rules}")
             
         except Exception as e:
             logger.error(f"Error loading settings from settings.json: {e}")
@@ -64,10 +68,14 @@ class TradeManager:
                 'check_open_position_limit': True,
                 'check_existing_position': True,
                 'check_alert_timestamp': True,
-                'check_dividend_date': True
+                'check_dividend_date': True,
+                'check_max_deal_age': True,
+                'check_total_positions_and_orders': True
             }
             self.max_open_positions = MAX_OPEN_POSITIONS
             self.alert_max_age_seconds = ALERT_MAX_AGE_SECONDS
+            self.max_deal_age_minutes = 60
+            self.max_total_positions_and_orders = 10
     
     def process_alert(self, alert_message, timestamp=None):
         """
@@ -209,11 +217,21 @@ class TradeManager:
             if len(positions.get('positions', [])) >= self.max_open_positions:
                 return {"status": "error", "message": f"Maximum open positions limit ({self.max_open_positions}) reached"}
         
+        # Check for total positions and orders (if enabled)
+        if self.validation_rules.get('check_total_positions_and_orders', False):
+            total_check_result = self.check_total_positions_and_orders()
+            if total_check_result.get('status') == 'error':
+                return total_check_result
+        
         # Check for dividend date (if enabled)
         if self.validation_rules['check_dividend_date']:
             if is_dividend_date(ticker, self.ticker_data):
                 dividend_date = ticker_row['Next dividend date'].values[0]
                 return {"status": "error", "message": f"Today is a dividend date for {ticker} ({dividend_date})"}
+        
+        # Check and cancel old deals if enabled
+        if self.validation_rules.get('check_max_deal_age', False):
+            self.check_and_cancel_old_deals()
         
         return None
     
@@ -901,4 +919,143 @@ class TradeManager:
         result['limit_distance'] = limit_distance
         result['stop_distance'] = stop_distance
         
-        return result 
+        return result
+    
+    def check_and_cancel_old_deals(self):
+        """
+        Check for and cancel deals (working orders) that are older than max_deal_age_minutes
+        
+        Returns:
+            dict: Result with canceled orders info
+        """
+        try:
+            # Get max deal age in minutes from settings
+            max_age_minutes = getattr(self, 'max_deal_age_minutes', 60)
+            
+            # Get working orders from IG API
+            orders_response = self.ig_client.get_working_orders()
+            
+            if not orders_response or not isinstance(orders_response, dict):
+                logger.error("Failed to get working orders")
+                return {"status": "error", "message": "Failed to get working orders"}
+            
+            orders = orders_response.get('workingOrders', [])
+            
+            if not orders:
+                return {"status": "success", "message": "No working orders found", "canceled_count": 0}
+            
+            # Check each order's age
+            now = datetime.now()
+            orders_to_cancel = []
+            
+            for order in orders:
+                working_order_data = order.get('workingOrderData', {})
+                created_date_str = working_order_data.get('createdDate')
+                
+                if not created_date_str:
+                    continue
+                    
+                # Parse the created date - format can vary by API version
+                try:
+                    if 'T' in created_date_str:
+                        # ISO format: "2023-01-01T12:30:00"
+                        created_date = datetime.fromisoformat(created_date_str.replace('Z', '+00:00'))
+                    else:
+                        # Older format: "2023/01/01 12:30:00"
+                        created_date = datetime.strptime(created_date_str, '%Y/%m/%d %H:%M:%S')
+                        
+                    # Calculate age in minutes
+                    age_minutes = (now - created_date).total_seconds() / 60
+                    
+                    # Check if older than max age
+                    if age_minutes > max_age_minutes:
+                        deal_id = working_order_data.get('dealId')
+                        if deal_id:
+                            orders_to_cancel.append({
+                                'deal_id': deal_id,
+                                'age_minutes': age_minutes,
+                                'created_date': created_date_str
+                            })
+                            
+                except Exception as e:
+                    logger.error(f"Error parsing date {created_date_str}: {e}")
+                    continue
+            
+            # Cancel old orders
+            canceled_orders = []
+            
+            for order in orders_to_cancel:
+                try:
+                    result = self.ig_client.cancel_working_order(order['deal_id'])
+                    
+                    if result:
+                        canceled_orders.append({
+                            'deal_id': order['deal_id'],
+                            'age_minutes': order['age_minutes'],
+                            'status': 'canceled'
+                        })
+                        logger.info(f"Canceled old working order {order['deal_id']} (age: {order['age_minutes']:.1f} minutes)")
+                    else:
+                        logger.warning(f"Failed to cancel old working order {order['deal_id']}")
+                        
+                except Exception as e:
+                    logger.error(f"Error canceling order {order['deal_id']}: {e}")
+            
+            return {
+                "status": "success",
+                "message": f"Canceled {len(canceled_orders)} old working orders",
+                "canceled_count": len(canceled_orders),
+                "canceled_orders": canceled_orders
+            }
+            
+        except Exception as e:
+            logger.error(f"Error in check_and_cancel_old_deals: {e}")
+            return {"status": "error", "message": f"Error checking old deals: {str(e)}"}
+    
+    def check_total_positions_and_orders(self):
+        """
+        Check if the total of open positions and working orders exceeds the limit
+        
+        Returns:
+            dict: Error result if limit exceeded, None otherwise
+        """
+        try:
+            # Get max total from settings
+            max_total = getattr(self, 'max_total_positions_and_orders', 10)
+            
+            # Get open positions
+            positions = self.get_all_positions()
+            position_count = len(positions.get('positions', []))
+            
+            # Get working orders
+            orders_response = self.ig_client.get_working_orders()
+            
+            if isinstance(orders_response, dict) and 'workingOrders' in orders_response:
+                order_count = len(orders_response.get('workingOrders', []))
+            else:
+                # If API response format is different or error occurred
+                order_count = 0
+                logger.warning("Could not get accurate working orders count")
+            
+            # Calculate total
+            total = position_count + order_count
+            
+            # Check if exceeds limit
+            if total >= max_total:
+                return {
+                    "status": "error", 
+                    "message": f"Total positions ({position_count}) and orders ({order_count}) exceeds limit of {max_total}"
+                }
+            
+            return {
+                "status": "success",
+                "position_count": position_count,
+                "order_count": order_count,
+                "total": total,
+                "limit": max_total
+            }
+            
+        except Exception as e:
+            logger.error(f"Error in check_total_positions_and_orders: {e}")
+            # In case of error, we don't block the trade
+            return {"status": "success", "message": f"Error checking total: {str(e)}"} 
