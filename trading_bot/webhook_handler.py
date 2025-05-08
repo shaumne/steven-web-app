@@ -190,9 +190,14 @@ class WebhookHandler:
                     logger.error(f"Missing required field: {field}")
                     return {"status": "error", "reason": f"Missing required field: {field}"}
 
-            # Check if this is a market order or a working order
-            if 'order_level' in data:
-                # This is a working order
+            # Get settings
+            settings = self.settings_manager.get_settings()
+            trading_settings = settings.get('trading', {})
+            default_order_type = trading_settings.get('default_order_type', 'LIMIT')
+
+            # Check if this is a market order or a working order based on settings and data
+            if 'order_level' in data or default_order_type == 'LIMIT':
+                # This is a working/limit order
                 return self._process_working_order(data)
             else:
                 # This is a market order

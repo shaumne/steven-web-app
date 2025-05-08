@@ -199,6 +199,15 @@
                                             <label class="form-check-label" for="checkDividendDate">Avoid dividend dates</label>
                                             <div class="text-muted small">Doesn't trade on dividend distribution days</div>
                                         </div>
+
+                                        <div class="mb-3">
+                                            <label for="defaultOrderType" class="form-label">Default Order Type</label>
+                                            <select class="form-control" id="defaultOrderType">
+                                                <option value="LIMIT" {% if trading.default_order_type == 'LIMIT' %}selected{% endif %}>Limit Order</option>
+                                                <option value="MARKET" {% if trading.default_order_type == 'MARKET' %}selected{% endif %}>Market Order</option>
+                                            </select>
+                                            <div class="text-muted small">Choose default order type for trades</div>
+                                        </div>
                                     </div>
                                 </div>
                             </div>

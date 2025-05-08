@@ -10,7 +10,8 @@
         "alert_max_age_seconds": 5,
         "csv_file_path": "ticker_data.csv",
         "max_deal_age_minutes": 60,
-        "max_total_positions_and_orders": 10
+        "max_total_positions_and_orders": 10,
+        "default_order_type": "LIMIT"
     },
     "validation": {
         "check_existing_position": true,

@@ -1477,56 +1477,60 @@ def test_connection():
 
 @app.route('/api/save_settings', methods=['POST'])
 def save_settings():
-    """Save settings to the database"""
+    """Save IG API settings"""
     try:
         data = request.get_json()
         
-        # Validate required fields
-        if not data:
-            return jsonify({
-                'status': 'error',
-                'message': 'No data provided'
-            })
-            
         # Get current settings
-        settings = settings_manager.get_settings()
+        current_settings = settings_manager.get_settings()
         
-        # Update IG API settings if provided
-        if 'ig_username' in data:
-            settings['ig_username'] = data['ig_username']
-        if 'ig_password' in data:
-            settings['ig_password'] = data['ig_password']
-        if 'ig_api_key' in data:
-            settings['ig_api_key'] = data['ig_api_key']
-        if 'ig_demo' in data:
-            settings['ig_demo'] = data['ig_demo']
-            
-        # Update validation rules if provided
-        if 'validation' in data:
-            settings['validation'] = data['validation']
-            
-        # Update trading settings if provided
-        if 'trading' in data:
-            settings['trading'] = data['trading']
-            
-            # Update default order type in IG API
-            if 'default_order_type' in data['trading']:
-                ig_api.set_default_order_type(data['trading']['default_order_type'])
-                
+        # Update IG API settings
+        current_settings['ig_username'] = data.get('ig_username', current_settings.get('ig_username', ''))
+        current_settings['ig_password'] = data.get('ig_password', current_settings.get('ig_password', ''))
+        current_settings['ig_api_key'] = data.get('ig_api_key', current_settings.get('ig_api_key', ''))
+        current_settings['ig_demo'] = data.get('ig_demo', current_settings.get('ig_demo', True))
+        
+        # Update trading settings
+        if 'trading' not in current_settings:
+            current_settings['trading'] = {}
+        current_settings['trading']['max_open_positions'] = int(data.get('max_open_positions', current_settings['trading'].get('max_open_positions', 10)))
+        current_settings['trading']['alert_max_age_seconds'] = int(data.get('alert_max_age_seconds', current_settings['trading'].get('alert_max_age_seconds', 5)))
+        current_settings['trading']['max_deal_age_minutes'] = int(data.get('max_deal_age_minutes', current_settings['trading'].get('max_deal_age_minutes', 60)))
+        current_settings['trading']['max_total_positions_and_orders'] = int(data.get('max_total_positions_and_orders', current_settings['trading'].get('max_total_positions_and_orders', 10)))
+        current_settings['trading']['default_order_type'] = data.get('default_order_type', current_settings['trading'].get('default_order_type', 'LIMIT'))
+        
+        # Update validation settings
+        if 'validation' not in current_settings:
+            current_settings['validation'] = {}
+        current_settings['validation']['check_existing_position'] = data.get('check_existing_position', current_settings['validation'].get('check_existing_position', True))
+        current_settings['validation']['check_same_day_trades'] = data.get('check_same_day_trades', current_settings['validation'].get('check_same_day_trades', True))
+        current_settings['validation']['check_open_position_limit'] = data.get('check_open_position_limit', current_settings['validation'].get('check_open_position_limit', True))
+        current_settings['validation']['check_alert_timestamp'] = data.get('check_alert_timestamp', current_settings['validation'].get('check_alert_timestamp', True))
+        current_settings['validation']['check_dividend_date'] = data.get('check_dividend_date', current_settings['validation'].get('check_dividend_date', True))
+        current_settings['validation']['check_max_deal_age'] = data.get('check_max_deal_age', current_settings['validation'].get('check_max_deal_age', True))
+        current_settings['validation']['check_total_positions_and_orders'] = data.get('check_total_positions_and_orders', current_settings['validation'].get('check_total_positions_and_orders', True))
+        
         # Save settings
-        settings_manager.save_settings(settings)
-        
-        return jsonify({
-            'status': 'success',
-            'message': 'Settings saved successfully'
-        })
-        
+        if settings_manager.save_settings(current_settings):
+            # Update webhook handler settings
+            webhook_handler.update_settings(current_settings)
+            
+            return jsonify({
+                "status": "success",
+                "message": "Settings saved successfully"
+            })
+        else:
+            return jsonify({
+                "status": "error",
+                "message": "Failed to save settings"
+            }), 500
+            
     except Exception as e:
-        logger.error(f"Error saving settings: {str(e)}")
+        logging.error(f"Error saving settings: {e}")
         return jsonify({
-            'status': 'error',
-            'message': f'Error saving settings: {str(e)}'
-        })
+            "status": "error",
+            "message": f"Error saving settings: {str(e)}"
+        }), 500
 
 @app.route('/api/save_validation_rules', methods=['POST'])
 @login_required
@@ -1620,40 +1624,72 @@ def upload_ticker_data():
                 'message': 'File must be a CSV file'
             })
         
-        # Save the file
+        # Save the file temporarily
+        temp_file_path = os.path.join(os.path.dirname(__file__), 'temp_ticker_data.csv')
+        file.save(temp_file_path)
+        
         try:
-            ticker_data_path = os.path.join(os.path.dirname(__file__), 'ticker_data.csv')
-            file.save(ticker_data_path)
+            # Load the new data
+            new_data = pd.read_csv(temp_file_path)
             
-            # Validate the file format
-            try:
-                df = pd.read_csv(ticker_data_path)
-                required_columns = ['Symbol', 'IG EPIC', 'ATR Stop Loss Period', 'ATR Stop Loss Multiple', 
-                                   'ATR Profit Target Period', 'ATR Profit Multiple', 'Postion Size Max GBP']
-                
-                missing_columns = [col for col in required_columns if col not in df.columns]
-                
-                if missing_columns:
-                    return jsonify({
-                        'status': 'error',
-                        'message': f'CSV file is missing required columns: {", ".join(missing_columns)}'
-                    })
-                
-                return jsonify({
-                    'status': 'success',
-                    'message': f'Successfully uploaded ticker data with {len(df)} instruments'
-                })
-                
-            except Exception as e:
+            # Validate required columns
+            required_columns = ['Symbol', 'IG EPIC', 'ATR Stop Loss Period', 'ATR Stop Loss Multiple', 
+                              'ATR Profit Target Period', 'ATR Profit Multiple', 'Postion Size Max GBP']
+            
+            missing_columns = [col for col in required_columns if col not in new_data.columns]
+            if missing_columns:
+                os.remove(temp_file_path)  # Clean up temp file
                 return jsonify({
                     'status': 'error',
-                    'message': f'Error validating CSV file: {str(e)}'
+                    'message': f'CSV file is missing required columns: {", ".join(missing_columns)}'
                 })
+            
+            # Load existing data if available
+            ticker_data_path = os.path.join(os.path.dirname(__file__), 'ticker_data.csv')
+            if os.path.exists(ticker_data_path):
+                existing_data = pd.read_csv(ticker_data_path)
                 
+                # If existing data has dividend dates, preserve them
+                if 'Next dividend date' in existing_data.columns:
+                    # Add 'Next dividend date' column to new data if it doesn't exist
+                    if 'Next dividend date' not in new_data.columns:
+                        new_data['Next dividend date'] = ''
+                    
+                    # Iterate through new data rows
+                    for index, row in new_data.iterrows():
+                        symbol = row['Symbol']
+                        div_date = row.get('Next dividend date', '')
+                        
+                        # Check if dividend date is empty or NaN in new data
+                        if pd.isna(div_date) or str(div_date).strip() == '':
+                            # Look for the symbol in existing data
+                            existing_row = existing_data[existing_data['Symbol'] == symbol]
+                            if not existing_row.empty:
+                                existing_date = existing_row.iloc[0].get('Next dividend date', '')
+                                # Only copy if existing date is valid
+                                if pd.notna(existing_date) and str(existing_date).strip() != '' and str(existing_date).strip() != 'No data':
+                                    new_data.at[index, 'Next dividend date'] = existing_date
+                                    logging.info(f"Updated dividend date for {symbol}: {existing_date}")
+            
+            # Save the new data
+            new_data.to_csv(ticker_data_path, index=False)
+            
+            # Clean up temp file
+            os.remove(temp_file_path)
+            
+            return jsonify({
+                'status': 'success',
+                'message': f'Successfully uploaded ticker data with {len(new_data)} instruments'
+            })
+            
         except Exception as e:
+            # Clean up temp file in case of error
+            if os.path.exists(temp_file_path):
+                os.remove(temp_file_path)
+            
             return jsonify({
                 'status': 'error',
-                'message': f'Error saving file: {str(e)}'
+                'message': f'Error processing CSV file: {str(e)}'
             })
             
     except Exception as e:
