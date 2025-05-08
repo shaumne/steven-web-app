@@ -1,4 +1,4 @@
-﻿Symbol,IG EPIC,ATR Stop Loss Period,ATR Stop Loss Multiple,ATR Profit Target Period,ATR Profit Multiple,Postion Size Max GBP,Opening Price Multiple,Next dividend date
+﻿Symbol,IG EPIC,ATR Stop Loss Period,ATR Stop Loss Multiple,ATR Profit Target Period,ATR Profit Multiple,Postion Size Max GBP,Opening Price Multiple,Next dividend date,Yahoo Symbol
 ASX_DLY:IFL,,9,156,3,102,10000,101.2,
 ASX_DLY:BOQ,,8,334,6,182,10000,97.0,
 ASX_DLY:CGF,,5,112,7,130,10000,102.6,

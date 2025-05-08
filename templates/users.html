@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>Kullanıcı Yönetimi</h2>
+    
+    <div class="card mb-4">
+        <div class="card-header">
+            <h4>Yeni Kullanıcı Ekle</h4>
+        </div>
+        <div class="card-body">
+            <form method="POST" action="{{ url_for('add_user') }}">
+                <div class="form-group">
+                    <label for="username">Kullanıcı Adı</label>
+                    <input type="text" class="form-control" id="username" name="username" required>
+                </div>
+                <div class="form-group">
+                    <label for="password">Şifre</label>
+                    <input type="password" class="form-control" id="password" name="password" required>
+                </div>
+                <div class="form-group">
+                    <label for="role">Rol</label>
+                    <select class="form-control" id="role" name="role">
+                        <option value="user">Kullanıcı</option>
+                        <option value="admin">Yönetici</option>
+                    </select>
+                </div>
+                <button type="submit" class="btn btn-primary">Kullanıcı Ekle</button>
+            </form>
+        </div>
+    </div>
+    
+    <div class="table-responsive">
+        <table class="table table-striped" id="usersTable">
+            <thead>
+                <tr>
+                    <th>Kullanıcı Adı</th>
+                    <th>Rol</th>
+                    <th>Oluşturulma Tarihi</th>
+                    <th>Son Giriş</th>
+                    <th>İşlemler</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for username, data in users.items() %}
+                <tr>
+                    <td>{{ username }}</td>
+                    <td>{{ data.role }}</td>
+                    <td>{{ data.created_at }}</td>
+                    <td>{{ data.last_login or 'Hiç giriş yapmadı' }}</td>
+                    <td>
+                        <button type="button" class="btn btn-warning btn-sm" 
+                                data-toggle="modal" data-target="#changePasswordModal{{ username }}">
+                            Şifre Değiştir
+                        </button>
+                    </td>
+                </tr>
+                
+                <!-- Şifre Değiştirme Modal -->
+                <div class="modal fade" id="changePasswordModal{{ username }}" tabindex="-1" role="dialog">
+                    <div class="modal-dialog" role="document">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title">{{ username }} - Şifre Değiştir</h5>
+                                <button type="button" class="close" data-dismiss="modal">
+                                    <span>&times;</span>
+                                </button>
+                            </div>
+                            <form method="POST" action="{{ url_for('change_password', username=username) }}">
+                                <div class="modal-body">
+                                    <div class="form-group">
+                                        <label for="new_password">Yeni Şifre</label>
+                                        <input type="password" class="form-control" id="new_password" 
+                                               name="new_password" required>
+                                    </div>
+                                </div>
+                                <div class="modal-footer">
+                                    <button type="button" class="btn btn-secondary" data-dismiss="modal">İptal</button>
+                                    <button type="submit" class="btn btn-primary">Şifreyi Değiştir</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{% block scripts %}
+<script>
+$(document).ready(function() {
+    $('#usersTable').DataTable({
+        "order": [[0, "asc"]],
+        "language": {
+            "url": "//cdn.datatables.net/plug-ins/1.10.24/i18n/Turkish.json"
+        }
+    });
+});
+</script>
+{% endblock %}
+{% endblock %} 

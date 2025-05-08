@@ -35,6 +35,7 @@ class IGClient:
         }
         self.account_type = IG_ACCOUNT_TYPE
         self.trade_history = {}  # İşlem geçmişini depolamak için sözlük
+        self.default_order_type = 'LIMIT'  # Default order type
     
     def login(self):
         """Login to IG Markets API"""
@@ -371,65 +372,89 @@ class IGClient:
             'dealReference': deal_reference
         }
     
-    def create_position(self, epic, direction, size, limit_distance=0, stop_distance=0, use_limit_order=False, limit_level=None, expiry="DFB"):
+    def create_position(self, epic, direction, size, price=None, stop=None, limit=None, use_limit_order=None):
         """
-        Create a position (market order or limit order).
+        Create a new position
         
         Args:
-            epic (str): The instrument's Epic code
-            direction (str): BUY or SELL
-            size (float): Trade size
-            limit_distance (float, optional): Take profit distance in points
-            stop_distance (float, optional): Stop loss distance in points
-            use_limit_order (bool, optional): If True, creates a limit order instead of a market order
-            limit_level (float, optional): Price level for limit orders (required if use_limit_order is True)
-            expiry (str, optional): Position expiry (default: DFB - daily)
+            epic (str): The EPIC code for the instrument
+            direction (str): 'BUY' or 'SELL'
+            size (float): Position size in GBP
+            price (float, optional): Entry price for limit orders
+            stop (float, optional): Stop loss price
+            limit (float, optional): Take profit price
+            use_limit_order (bool, optional): Whether to use limit order. If None, uses default_order_type
             
         Returns:
-            dict: Position creation result with status and details
+            dict: Response from IG API
         """
-        # Validate inputs for limit orders
-        if use_limit_order and limit_level is None:
-            error_msg = "limit_level must be provided for limit orders"
-            logger.error(error_msg)
-            return {"status": "error", "reason": error_msg}
-        
-        # IG API her zaman pozitif mesafe değerleri bekler
-        stop_distance = abs(float(stop_distance)) if stop_distance else 0
-        limit_distance = abs(float(limit_distance)) if limit_distance else 0
-        
-        logger.info(f"Creating position with direction: {direction}, stop distance: {stop_distance}, limit distance: {limit_distance}")
+        if not self._ensure_session():
+            logger.error("Failed to create position - no valid session")
+            return {"status": "error", "reason": "No valid session"}
             
-        # Create either a market or limit position based on the use_limit_order flag
-        if use_limit_order:
-            logger.info(f"Creating LIMIT position for {epic}, direction: {direction}, size: {size}, limit_level: {limit_level}")
-            result = self._create_limit_position(
-                epic=epic,
-                direction=direction,
-                size=size,
-                limit_level=limit_level,
-                limit_distance=limit_distance,
-                stop_distance=stop_distance,
-                expiry=expiry
-            )
-        else:
-            logger.info(f"Creating MARKET position for {epic}, direction: {direction}, size: {size}")
-            result = self._create_market_position(
-                epic=epic,
-                direction=direction,
-                size=size,
-                limit_distance=limit_distance,
-                stop_distance=stop_distance,
-                expiry=expiry
-            )
+        # Determine order type
+        if use_limit_order is None:
+            use_limit_order = (self.default_order_type == 'LIMIT')
             
-        # If trade was successful, store it in historical records
-        if result["status"] == "success":
-            deal_ref = result.get("deal_reference")
-            if deal_ref:
-                self.trade_history[deal_ref] = result
-                
-        return result
+        # Prepare the position data
+        position_data = {
+            "epic": epic,
+            "direction": direction,
+            "size": str(size),
+            "orderType": "LIMIT" if use_limit_order else "MARKET",
+            "guaranteedStop": False,
+            "forceOpen": True
+        }
+        
+        # Add price for limit orders
+        if use_limit_order and price:
+            position_data["level"] = str(price)
+            
+        # Add stop loss if provided
+        if stop:
+            position_data["stopLevel"] = str(stop)
+            position_data["stopDistance"] = None
+            
+        # Add take profit if provided
+        if limit:
+            position_data["profitLevel"] = str(limit)
+            position_data["profitDistance"] = None
+        
+        # Make the API request
+        response = self.session.post(
+            f"{self.BASE_URL}/positions/otc",
+            headers=self.headers,
+            json=position_data
+        )
+        
+        if response.status_code != 200:
+            logger.error(f"Failed to create position: {response.text}")
+            return {"status": "error", "reason": f"API Error: {response.status_code}", "details": response.text}
+            
+        result = response.json()
+        deal_reference = result.get('dealReference', '')
+        logger.info(f"Position created successfully. Deal reference: {deal_reference}")
+        
+        if deal_reference:
+            # Get the deal confirmation for more details
+            confirmation = self.get_deal_confirmation(deal_reference)
+            if confirmation:
+                deal_id = confirmation.get('dealId')
+                deal_status = confirmation.get('status')
+                return {
+                    "status": "success", 
+                    "deal_reference": deal_reference,
+                    "deal_id": deal_id,
+                    "deal_status": deal_status,
+                    "confirmation": confirmation
+                }
+            
+        # Even if we couldn't get confirmation, return success with the deal reference
+        return {
+            "status": "success", 
+            "deal_reference": deal_reference,
+            "message": "Position created, no confirmation details available"
+        }
     
     def _get_market_details(self, epic):
         """
@@ -827,290 +852,91 @@ class IGClient:
             logger.error(f"Error checking connection: {e}")
             return False
     
-    def create_working_order(self, epic, direction, size, order_level, limit_distance=0, stop_distance=0, guaranteed_stop=False, expiry=None):
+    def create_working_order(self, epic, direction, size, level, stop=None, limit=None, use_limit_order=None):
         """
-        Create a working order (limit order) at a specified price level
+        Create a working order
         
         Args:
-            epic (str): The epic identifier for the instrument
-            direction (str): The direction of the trade ('BUY' or 'SELL')
-            size (float): The size of the trade
-            order_level (float): The price level to execute the order at
-            limit_distance (float, optional): The limit distance in points. Defaults to 0.
-            stop_distance (float, optional): The stop distance in points. Defaults to 0.
-            guaranteed_stop (bool, optional): Whether to use a guaranteed stop. Defaults to False.
-            expiry (str, optional): The expiry time for the working order. Defaults to None (which results in 'DFB' for daily markets).
+            epic (str): The EPIC code for the instrument
+            direction (str): 'BUY' or 'SELL'
+            size (float): Position size in GBP
+            level (float): Entry price level
+            stop (float, optional): Stop loss price
+            limit (float, optional): Take profit price
+            use_limit_order (bool, optional): Whether to use limit order. If None, uses default_order_type
             
         Returns:
-            dict: The response from the API containing deal reference if successful, or error details
+            dict: Response from IG API
         """
         if not self._ensure_session():
             logger.error("Failed to create working order - no valid session")
             return {"status": "error", "reason": "No valid session"}
             
-        # IG API her zaman pozitif mesafe değerleri bekler
-        stop_distance = abs(float(stop_distance)) if stop_distance else 0
-        limit_distance = abs(float(limit_distance)) if limit_distance else 0
-        
-        logger.info(f"Using positive distances: Stop={stop_distance}, Limit={limit_distance}")
-        
-        # Determine appropriate expiry
-        if not expiry:
-            # Set default expiry based on market type
-            if 'DFB' in epic:
-                expiry = 'DFB'  # Daily Funded Bet
-            elif 'CFD' in epic:
-                expiry = 'DFB'  # For CFDs, use daily by default
-            else:
-                expiry = 'GTC'  # Good Till Cancelled as fallback
-        
-        # Get market details to verify current price and minimum distances
-        market_details = self._get_market_details(epic)
-        if not market_details:
-            return {"status": "error", "reason": "Failed to get market details"}
-        
-        current_price = market_details.get('current_price', 0)
-        
-        # Determine order type (LIMIT or STOP) based on direction and level
-        order_type = "LIMIT"
-        if direction == "BUY" and order_level > current_price:
-            order_type = "STOP"
-        elif direction == "SELL" and order_level < current_price:
-            order_type = "STOP"
-        
-        logger.info(f"Creating {order_type} working order - Direction: {direction}, Price: {order_level}, Current price: {current_price}")
-        
-        # Build the payload
-        payload = {
+        # Determine order type
+        if use_limit_order is None:
+            use_limit_order = (self.default_order_type == 'LIMIT')
+            
+        # Prepare the working order data
+        order_data = {
             "epic": epic,
-            "expiry": expiry,
             "direction": direction,
-            "size": f"{round(float(size), 2):.2f}",
-            "level": f"{round(float(order_level), 4):.4f}",
-            "type": order_type,
-            "timeInForce": "GOOD_TILL_CANCELLED",
-            "guaranteedStop": guaranteed_stop,
-            "forceOpen": True,
-            "currencyCode": "GBP"  # Varsayılan para birimi ekleniyor
+            "size": str(size),
+            "orderType": "LIMIT" if use_limit_order else "MARKET",
+            "level": str(level),
+            "guaranteedStop": False
         }
         
-        # Add stop and limit if provided (and non-zero)
-        if stop_distance and float(stop_distance) > 0:
-            payload["stopDistance"] = f"{round(float(stop_distance), 2):.2f}"
-        
-        if limit_distance and float(limit_distance) > 0:
-            payload["limitDistance"] = f"{round(float(limit_distance), 2):.2f}"
-        
-        # Create the working order
-        working_order_url = f"{self.BASE_URL}/workingorders/otc"
-        working_order_headers = self.headers.copy()
-        working_order_headers['Version'] = '2'
-        
-        try:
-            logger.info(f"Sending working order request: {json.dumps(payload, indent=2)}")
-            response = self.session.post(working_order_url, headers=working_order_headers, data=json.dumps(payload))
+        # Add stop loss if provided
+        if stop:
+            order_data["stopLevel"] = str(stop)
+            order_data["stopDistance"] = None
             
-            logger.info(f"Working order response status: {response.status_code}")
-            logger.info(f"Working order response body: {response.text}")
+        # Add take profit if provided
+        if limit:
+            order_data["profitLevel"] = str(limit)
+            order_data["profitDistance"] = None
+        
+        # Make the API request
+        response = self.session.post(
+            f"{self.BASE_URL}/workingorders/otc",
+            headers=self.headers,
+            json=order_data
+        )
+        
+        if response.status_code != 200:
+            logger.error(f"Failed to create working order: {response.text}")
+            return {"status": "error", "reason": f"API Error: {response.status_code}", "details": response.text}
             
-            if response.status_code == 200:
-                result = response.json()
-                deal_reference = result.get('dealReference', '')
-                logger.info(f"Working order created successfully. Deal reference: {deal_reference}")
-                
-                if deal_reference:
-                    # Get the deal confirmation for more details
-                    confirmation = self.get_deal_confirmation(deal_reference)
-                    if confirmation:
-                        deal_id = confirmation.get('dealId')
-                        deal_status = confirmation.get('status')
-                        return {
-                            "status": "success", 
-                            "deal_reference": deal_reference,
-                            "deal_id": deal_id,
-                            "deal_status": deal_status,
-                            "confirmation": confirmation
-                        }
-                    
-                # Even if we couldn't get confirmation, return success with the deal reference
+        result = response.json()
+        deal_reference = result.get('dealReference', '')
+        logger.info(f"Working order created successfully. Deal reference: {deal_reference}")
+        
+        if deal_reference:
+            # Get the deal confirmation for more details
+            confirmation = self.get_deal_confirmation(deal_reference)
+            if confirmation:
+                deal_id = confirmation.get('dealId')
+                deal_status = confirmation.get('status')
                 return {
                     "status": "success", 
                     "deal_reference": deal_reference,
-                    "message": "Working order created, no confirmation details available"
+                    "deal_id": deal_id,
+                    "deal_status": deal_status,
+                    "confirmation": confirmation
                 }
-            else:
-                self._log_error_response(response, "Failed to create working order")
-                return {"status": "error", "reason": f"API Error: {response.status_code}", "details": response.text}
-                
-        except Exception as e:
-            logger.error(f"Exception creating working order: {str(e)}")
-            return {"status": "error", "reason": f"Exception: {str(e)}"}
+            
+        # Even if we couldn't get confirmation, return success with the deal reference
+        return {
+            "status": "success", 
+            "deal_reference": deal_reference,
+            "message": "Working order created, no confirmation details available"
+        }
     
-    def _create_limit_position(self, epic, direction, size, limit_level, limit_distance=0, stop_distance=0, expiry="DFB"):
-        """
-        Create a LIMIT position (executes when market reaches the limit level).
-        
-        Args:
-            epic (str): The instrument's Epic code
-            direction (str): BUY or SELL
-            size (float): Trade size
-            limit_level (float): Price level for the limit order to trigger
-            limit_distance (float, optional): Take profit distance in points
-            stop_distance (float, optional): Stop loss distance in points
-            expiry (str, optional): Position expiry (default: DFB - daily)
-            
-        Returns:
-            dict: Limit order creation result with status and details
-        """
-        if not self._ensure_session():
-            return {"status": "error", "reason": "No valid session"}
-            
-        # Önce market detaylarını alalım
-        market_details = self._get_market_details(epic)
-        if not market_details:
-            return {"status": "error", "reason": "Failed to get market details"}
-            
-        market_status = market_details.get('market_status', 'CLOSED')
-        current_price = market_details.get('current_price', 0)
-        
-        logger.info(f"Market status for {epic}: {market_status}, current price: {current_price}")
-        
-        # IG API her zaman pozitif mesafe değerleri bekler
-        stop_distance = abs(float(stop_distance)) if stop_distance else 0
-        limit_distance = abs(float(limit_distance)) if limit_distance else 0
-        
-        logger.info(f"Using positive distances: Stop={stop_distance}, Limit={limit_distance}")
-        
-        # Piyasa açıksa positions/otc kullanabiliriz, kapalıysa workingorders/otc kullanmalıyız
-        if market_status == 'TRADEABLE':
-            # Piyasa açık - positions/otc endpoint'i ile limit emri oluştur
-            logger.info(f"Market is OPEN - creating limit position with positions/otc endpoint")
-            
-            # Construct the payload for the API request
-            payload = {
-                "epic": epic,
-                "expiry": expiry,
-                "direction": direction,
-                "size": f"{round(float(size), 2):.2f}",
-                "orderType": "LIMIT",
-                "level": f"{round(float(limit_level), 4):.4f}",
-                "forceOpen": True,
-                "guaranteedStop": False,
-                "timeInForce": "EXECUTE_AND_ELIMINATE",
-                "currencyCode": "GBP"
-            }
-            
-            # Add stop and limit if provided
-            if stop_distance > 0:
-                payload["stopDistance"] = f"{round(stop_distance, 2):.2f}"
-                
-            if limit_distance > 0:
-                payload["limitDistance"] = f"{round(limit_distance, 2):.2f}"
-                
-            # Define the API endpoint
-            endpoint = f"{self.BASE_URL}/positions/otc"
-            
-        else:
-            # Piyasa kapalı - workingorders/otc endpoint'i ile çalışan emir oluştur
-            logger.info(f"Market is CLOSED - creating working order with workingorders/otc endpoint")
-            
-            # Determine order type (LIMIT/STOP)
-            order_type = "LIMIT"
-            
-            # Construct the payload for the API request
-            payload = {
-                "epic": epic,
-                "expiry": expiry,
-                "direction": direction,
-                "size": f"{round(float(size), 2):.2f}",
-                "level": f"{round(float(limit_level), 4):.4f}",
-                "type": order_type,
-                "currencyCode": "GBP",
-                "timeInForce": "GOOD_TILL_CANCELLED",
-                "guaranteedStop": False,
-                "forceOpen": True
-            }
-            
-            # Add stop and limit if provided
-            if stop_distance > 0:
-                payload["stopDistance"] = f"{round(stop_distance, 2):.2f}"
-                
-            if limit_distance > 0:
-                payload["limitDistance"] = f"{round(limit_distance, 2):.2f}"
-                
-            # Define the API endpoint
-            endpoint = f"{self.BASE_URL}/workingorders/otc"
-            
-        # Version başlığını ayarla
-        headers = self.headers.copy()
-        headers['Version'] = '2'
-        
-        # Log request details (without the API key)
-        safe_headers = dict(headers)
-        if 'X-IG-API-KEY' in safe_headers:
-            safe_headers['X-IG-API-KEY'] = '*****'
-            
-        logger.debug(f"Order request to {endpoint}")
-        logger.debug(f"Headers: {safe_headers}")
-        logger.debug(f"Payload: {payload}")
-        
-        try:
-            # Make the API request
-            response = self.session.post(
-                endpoint,
-                headers=headers,
-                json=payload
-            )
-            
-            logger.debug(f"API response status: {response.status_code}")
-            logger.debug(f"API response body: {response.text}")
-            
-            # Check if the response is successful
-            if response.status_code == 200:
-                data = response.json()
-                logger.info(f"Order created successfully: {data}")
-                
-                # Return the success response with order details
-                return {
-                    "status": "success",
-                    "deal_id": data.get("dealId"),
-                    "deal_reference": data.get("dealReference"),
-                    "date": datetime.now().isoformat(),
-                    "epic": epic,
-                    "direction": direction,
-                    "size": size,
-                    "order_type": "LIMIT" if market_status == "TRADEABLE" else "WORKING_ORDER",
-                    "limit_level": limit_level
-                }
-            else:
-                # Try to extract error details from the response
-                error_details = "Unknown error"
-                try:
-                    error_data = response.json()
-                    error_details = error_data.get("errorCode", str(error_data))
-                except Exception:
-                    error_details = response.text
-                
-                logger.error(f"Failed to create order: {error_details}")
-                return {
-                    "status": "error",
-                    "reason": f"API error ({response.status_code}): {error_details}",
-                    "epic": epic,
-                    "direction": direction,
-                    "size": size,
-                    "order_type": "LIMIT" if market_status == "TRADEABLE" else "WORKING_ORDER"
-                }
-                
-        except Exception as e:
-            logger.error(f"Exception in create order: {str(e)}")
-            return {
-                "status": "error",
-                "reason": f"Exception: {str(e)}",
-                "epic": epic,
-                "direction": direction,
-                "size": size,
-                "order_type": "LIMIT" if market_status == "TRADEABLE" else "WORKING_ORDER"
-            }
+    def set_default_order_type(self, order_type):
+        """Set the default order type (LIMIT or MARKET)"""
+        if order_type not in ['LIMIT', 'MARKET']:
+            raise ValueError("Order type must be either 'LIMIT' or 'MARKET'")
+        self.default_order_type = order_type
     
     def get_working_orders(self):
         """Get all working orders"""

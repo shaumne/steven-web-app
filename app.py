@@ -15,8 +15,15 @@ from trading_bot.webhook_handler import WebhookHandler
 from trading_bot.config import load_ticker_data
 from trading_bot.auth import init_users_file, get_users, authenticate_user, login_required, admin_required
 from trading_bot.ig_api import IGClient
+from trading_bot.log_manager import LogManager
 import requests
 from div import update_ticker_data_dividend_dates
+
+# Initialize log manager
+log_manager = LogManager(
+    log_dir=os.environ.get('LOG_DIRECTORY', 'logs'),
+    max_days=int(os.environ.get('LOG_RETENTION_DAYS', 1))
+)
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -24,8 +31,67 @@ app.secret_key = os.environ.get('SECRET_KEY', 'trading_bot_secret_key')
 app.config['SESSION_TYPE'] = 'filesystem'
 app.config['PERMANENT_SESSION_LIFETIME'] = datetime.timedelta(hours=12)
 
-# Initialize webhook handler
-webhook_handler = WebhookHandler()
+# Initialize IG API client
+ig_api = IGClient()
+
+# Initialize settings manager
+class SettingsManager:
+    def __init__(self):
+        self.settings_file = os.path.join(os.path.dirname(__file__), 'settings.json')
+        self.ticker_data_file = os.path.join(os.path.dirname(__file__), 'ticker_data.csv')
+        
+    def get_settings(self):
+        """Get current settings from file"""
+        try:
+            with open(self.settings_file, 'r') as f:
+                return json.load(f)
+        except Exception as e:
+            logger.error(f"Error loading settings: {e}")
+            return {
+                "ig_username": "",
+                "ig_password": "",
+                "ig_api_key": "",
+                "ig_demo": True,
+                "validation": {
+                    "check_existing_position": True,
+                    "check_same_day_trades": True,
+                    "check_open_position_limit": True,
+                    "check_alert_timestamp": True,
+                    "check_dividend_date": True,
+                    "check_max_deal_age": True,
+                    "check_total_positions_and_orders": True
+                },
+                "trading": {
+                    "max_open_positions": 10,
+                    "alert_max_age_seconds": 5,
+                    "max_deal_age_minutes": 60,
+                    "max_total_positions_and_orders": 10,
+                    "default_order_type": "LIMIT"
+                }
+            }
+            
+    def save_settings(self, settings):
+        """Save settings to file"""
+        try:
+            with open(self.settings_file, 'w') as f:
+                json.dump(settings, f, indent=4)
+            return True
+        except Exception as e:
+            logger.error(f"Error saving settings: {e}")
+            return False
+            
+    def get_ticker_data(self):
+        """Get ticker data from CSV file"""
+        try:
+            return pd.read_csv(self.ticker_data_file)
+        except Exception as e:
+            logger.error(f"Error loading ticker data: {e}")
+            return pd.DataFrame()
+
+settings_manager = SettingsManager()
+
+# Initialize webhook handler with dependencies
+webhook_handler = WebhookHandler(ig_api=ig_api, settings_manager=settings_manager)
 
 # Initialize the users file
 init_users_file()
@@ -1086,97 +1152,108 @@ def dashboard_positions():
     
     return render_template('positions.html', positions=positions, orders=orders)
 
+def clean_ticker_data(df):
+    """Clean ticker data by removing HTML tags and fixing nan values"""
+    for column in df.columns:
+        df[column] = df[column].apply(lambda x: str(x).replace('<input type=', '').replace('>', '').replace('<', ''))
+        # Replace 'nan' strings with empty string
+        df[column] = df[column].apply(lambda x: '' if str(x).lower() == 'nan' else x)
+    return df
+
 @app.route('/dashboard/settings')
 @login_required
 def dashboard_settings():
     """Settings management page"""
-    # Load ticker data
-    ticker_data = load_ticker_data()
-    
-    # Load settings from JSON file
-    settings_path = os.path.join(os.path.dirname(__file__), 'settings.json')
     try:
-        with open(settings_path, 'r') as f:
-            settings = json.load(f)
+        # Load and clean ticker data
+        ticker_data = pd.read_csv(settings_manager.ticker_data_file)
+        ticker_data = clean_ticker_data(ticker_data)
+        
+        # Save cleaned data back to CSV
+        ticker_data.to_csv(settings_manager.ticker_data_file, index=False)
+        
+        ticker_count = len(ticker_data)
+        
+        # Get current settings
+        settings = settings_manager.get_settings()
+        
+        # Extract validation and trading settings
+        validation = settings.get('validation', {
+            'check_existing_position': True,
+            'check_same_day_trades': True,
+            'check_open_position_limit': True,
+            'check_alert_timestamp': True,
+            'check_dividend_date': True,
+            'check_max_deal_age': True,
+            'check_total_positions_and_orders': True
+        })
+        
+        trading = settings.get('trading', {
+            'max_open_positions': 10,
+            'alert_max_age_seconds': 5,
+            'max_deal_age_minutes': 60,
+            'max_total_positions_and_orders': 10,
+            'default_order_type': 'LIMIT'
+        })
+        
+        # Get API connection status
+        ig_connected = ig_api.is_connected()
+        
+        # Get webhook URL
+        webhook_url = request.host_url.rstrip('/') + '/webhook'
+        
+        # Get IG credentials
+        ig_username = settings.get('ig_username', '')
+        ig_password = '*' * len(settings.get('ig_password', ''))
+        ig_api_key = '*' * len(settings.get('ig_api_key', ''))
+        ig_demo = settings.get('ig_demo', True)
+        
+        return render_template('settings.html',
+                             ticker_data=ticker_data,
+                             ticker_count=ticker_count,
+                             settings=settings,
+                             validation=validation,
+                             trading=trading,
+                             ig_username=ig_username,
+                             ig_password=ig_password,
+                             ig_api_key=ig_api_key,
+                             ig_demo=ig_demo,
+                             ig_connected=ig_connected,
+                             webhook_url=webhook_url)
+                             
     except Exception as e:
-        logging.error(f"Error loading settings: {e}")
-        settings = {
-            "api": {
-                "ig_username": "",
-                "ig_password": "",
-                "ig_api_key": "",
-                "ig_account_type": "DEMO"
-            },
-            "trading": {
-                "max_open_positions": 10,
-                "alert_max_age_seconds": 5,
-                "csv_file_path": "ticker_data.csv"
-            },
-            "validation": {
-                "check_same_day_trades": True,
-                "check_open_position_limit": True,
-                "check_existing_position": True,
-                "check_alert_timestamp": True,
-                "check_dividend_date": True
-            }
-        }
-    
-    # Get API credentials from settings
-    ig_username = settings['api'].get('ig_username', '')
-    ig_password = settings['api'].get('ig_password', '')
-    ig_api_key = settings['api'].get('ig_api_key', '')
-    ig_demo = settings['api'].get('ig_account_type', 'DEMO') == 'DEMO'
-    
-    # Check if connected to IG API
-    ig_connected = False
-    if hasattr(webhook_handler, 'trade_manager') and hasattr(webhook_handler.trade_manager, 'ig_client'):
-        ig_connected = webhook_handler.trade_manager.ig_client.is_connected()
-    
-    # Get webhook settings
-    webhook_url = request.host_url + 'webhook'
-    
-    return render_template('settings.html',
-                          ticker_data=ticker_data,
-                          ticker_count=len(ticker_data) if not ticker_data.empty else 0,
-                          ig_username=ig_username,
-                          ig_password='*' * len(ig_password) if ig_password else '',
-                          ig_api_key='*' * len(ig_api_key) if ig_api_key else '',
-                          ig_demo=ig_demo,
-                          ig_connected=ig_connected,
-                          webhook_url=webhook_url,
-                          validation=settings['validation'],
-                          trading=settings['trading'])
+        logger.error(f"Error loading settings page: {str(e)}")
+        flash('Error loading settings. Please check the logs.', 'danger')
+        return redirect(url_for('dashboard'))
 
 @app.route('/dashboard/logs')
 @login_required
 def dashboard_logs():
     """Logs viewing page"""
-    # Get log files
+    # Get log files using log manager
     log_files = []
-    log_directory = os.environ.get('LOG_DIRECTORY', '.')
     
     try:
-        for file in os.listdir(log_directory):
-            if file.endswith('.log'):
-                file_path = os.path.join(log_directory, file)
-                file_size = os.path.getsize(file_path)
-                file_mtime = os.path.getmtime(file_path)
-                
-                # Get the last few lines of the log file
-                try:
-                    with open(file_path, 'r') as f:
-                        lines = f.readlines()
-                        preview = ''.join(lines[-5:]) if lines else "Log file is empty"
-                except Exception as e:
-                    preview = f"Error reading log file: {e}"
-                
-                log_files.append({
-                    'name': file,
-                    'path': file_path,
-                    'size': file_size,
-                    'modified': datetime.datetime.fromtimestamp(file_mtime).strftime('%Y-%m-%d %H:%M:%S'),
-                    'preview': preview
-                })
+        for file_name in log_manager.get_log_files():
+            file_path = os.path.join(log_manager.log_dir, file_name)
+            file_size = os.path.getsize(file_path)
+            file_mtime = os.path.getmtime(file_path)
+            
+            # Get the last few lines of the log file
+            try:
+                with open(file_path, 'r') as f:
+                    lines = f.readlines()
+                    preview = ''.join(lines[-5:]) if lines else "Log file is empty"
+            except Exception as e:
+                preview = f"Error reading log file: {e}"
+            
+            log_files.append({
+                'name': file_name,
+                'path': file_path,
+                'size': file_size,
+                'modified': datetime.datetime.fromtimestamp(file_mtime).strftime('%Y-%m-%d %H:%M:%S'),
+                'preview': preview
+            })
     except Exception as e:
         logging.error(f"Error reading log directory: {e}")
     
@@ -1186,8 +1263,7 @@ def dashboard_logs():
 @login_required
 def view_log(filename):
     """View a specific log file"""
-    log_directory = os.environ.get('LOG_DIRECTORY', '.')
-    file_path = os.path.join(log_directory, filename)
+    file_path = os.path.join(log_manager.log_dir, filename)
     
     # Security check to prevent directory traversal
     if not os.path.exists(file_path) or '..' in filename:
@@ -1400,80 +1476,56 @@ def test_connection():
         })
 
 @app.route('/api/save_settings', methods=['POST'])
-@login_required
 def save_settings():
-    """Save IG API settings"""
+    """Save settings to the database"""
     try:
-        data = request.json
+        data = request.get_json()
         
+        # Validate required fields
         if not data:
             return jsonify({
                 'status': 'error',
                 'message': 'No data provided'
             })
+            
+        # Get current settings
+        settings = settings_manager.get_settings()
         
-        # Extract settings
-        username = data.get('username')
-        password = data.get('password')
-        api_key = data.get('api_key')
-        demo = data.get('demo', False)
-        
-        # Validate settings
-        if not username or not password or not api_key:
-            return jsonify({
-                'status': 'error',
-                'message': 'Username, password and API key are required'
-            })
-        
-        # Load settings from JSON file
-        settings_path = os.path.join(os.path.dirname(__file__), 'settings.json')
-        try:
-            with open(settings_path, 'r') as f:
-                settings = json.load(f)
-        except Exception:
-            settings = {
-                "api": {},
-                "trading": {},
-                "validation": {}
-            }
-        
-        # Update API settings
-        settings['api']['ig_username'] = username
-        settings['api']['ig_password'] = password
-        settings['api']['ig_api_key'] = api_key
-        settings['api']['ig_account_type'] = "DEMO" if demo else "LIVE"
-        
-        # Save settings to JSON file
-        with open(settings_path, 'w') as f:
-            json.dump(settings, f, indent=4)
-        
-        # Update environment variables
-        os.environ['IG_USERNAME'] = username
-        os.environ['IG_PASSWORD'] = password
-        os.environ['IG_API_KEY'] = api_key
-        os.environ['IG_DEMO'] = '1' if demo else '0'
-        
-        # Create a .env file to persist settings
-        env_file_path = os.path.join(os.path.dirname(__file__), '.env')
-        
-        with open(env_file_path, 'w') as f:
-            f.write(f"IG_USERNAME={username}\n")
-            f.write(f"IG_PASSWORD={password}\n")
-            f.write(f"IG_API_KEY={api_key}\n")
-            f.write(f"IG_DEMO={'1' if demo else '0'}\n")
-        
-        # Reset IG client to use new settings
-        webhook_handler.trade_manager.ig_client = IGClient()
+        # Update IG API settings if provided
+        if 'ig_username' in data:
+            settings['ig_username'] = data['ig_username']
+        if 'ig_password' in data:
+            settings['ig_password'] = data['ig_password']
+        if 'ig_api_key' in data:
+            settings['ig_api_key'] = data['ig_api_key']
+        if 'ig_demo' in data:
+            settings['ig_demo'] = data['ig_demo']
+            
+        # Update validation rules if provided
+        if 'validation' in data:
+            settings['validation'] = data['validation']
+            
+        # Update trading settings if provided
+        if 'trading' in data:
+            settings['trading'] = data['trading']
+            
+            # Update default order type in IG API
+            if 'default_order_type' in data['trading']:
+                ig_api.set_default_order_type(data['trading']['default_order_type'])
+                
+        # Save settings
+        settings_manager.save_settings(settings)
         
         return jsonify({
             'status': 'success',
             'message': 'Settings saved successfully'
         })
+        
     except Exception as e:
-        logging.error(f"Error saving settings: {e}")
+        logger.error(f"Error saving settings: {str(e)}")
         return jsonify({
             'status': 'error',
-            'message': f'Error: {str(e)}'
+            'message': f'Error saving settings: {str(e)}'
         })
 
 @app.route('/api/save_validation_rules', methods=['POST'])
@@ -1919,6 +1971,102 @@ def update_dividend_dates():
         return jsonify({
             "status": "error",
             "message": f"Error updating dividend dates: {str(e)}"
+        }), 500
+
+@app.route('/api/refresh_ticker_data', methods=['POST'])
+@login_required
+def refresh_ticker_data():
+    """Refresh ticker data from file"""
+    try:
+        # Reload ticker data
+        ticker_data = pd.read_csv(settings_manager.ticker_data_file)
+        
+        # Update session data
+        session['ticker_data'] = ticker_data.to_dict('records')
+        session['ticker_count'] = len(ticker_data)
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'Ticker data refreshed successfully',
+            'ticker_count': len(ticker_data)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error refreshing ticker data: {str(e)}")
+        return jsonify({
+            'status': 'error',
+            'message': f'Error refreshing ticker data: {str(e)}'
+        }), 500
+
+@app.route('/api/update_ticker_data', methods=['POST'])
+@login_required
+def update_ticker_data():
+    """Update ticker data with Yahoo symbols"""
+    try:
+        data = request.get_json()
+        changes = data.get('changes', [])
+        
+        if not changes:
+            return jsonify({
+                'status': 'error',
+                'message': 'No changes provided'
+            })
+            
+        logger.info(f"Received changes: {changes}")
+        
+        # Load current ticker data
+        ticker_data = pd.read_csv(settings_manager.ticker_data_file)
+        
+        # Apply changes
+        for change in changes:
+            symbol = change.get('symbol')
+            field = change.get('field')
+            value = change.get('value', '').strip()
+            
+            logger.info(f"Updating {symbol} {field} to {value}")
+            
+            if symbol and field:
+                # Ensure symbol exists in DataFrame
+                if symbol not in ticker_data['Symbol'].values:
+                    logger.error(f"Symbol {symbol} not found in ticker data")
+                    continue
+                    
+                # Update the value
+                mask = ticker_data['Symbol'] == symbol
+                ticker_data.loc[mask, field] = value
+                logger.info(f"Updated value for {symbol}: {ticker_data.loc[mask, field].values[0]}")
+        
+        # Save changes back to CSV
+        try:
+            ticker_data.to_csv(settings_manager.ticker_data_file, index=False)
+            logger.info(f"Saved changes to {settings_manager.ticker_data_file}")
+            
+            # Verify the changes were saved
+            verification = pd.read_csv(settings_manager.ticker_data_file)
+            for change in changes:
+                symbol = change.get('symbol')
+                field = change.get('field')
+                value = change.get('value', '').strip()
+                saved_value = verification.loc[verification['Symbol'] == symbol, field].values[0]
+                logger.info(f"Verification - {symbol} {field}: saved value = {saved_value}")
+                
+        except Exception as e:
+            logger.error(f"Error saving to CSV: {str(e)}")
+            return jsonify({
+                'status': 'error',
+                'message': f'Error saving to CSV: {str(e)}'
+            }), 500
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'Ticker data updated successfully'
+        })
+        
+    except Exception as e:
+        logger.error(f"Error updating ticker data: {str(e)}")
+        return jsonify({
+            'status': 'error',
+            'message': f'Error updating ticker data: {str(e)}'
         }), 500
 
 if __name__ == "__main__":

@@ -14,8 +14,10 @@ class WebhookHandler:
     Handler for incoming webhook requests from TradingView
     """
     
-    def __init__(self):
+    def __init__(self, ig_api, settings_manager):
         """Initialize the webhook handler"""
+        self.ig_api = ig_api
+        self.settings_manager = settings_manager
         self.trade_manager = TradeManager()
         self.last_reset_day = datetime.now().day
     
@@ -30,106 +32,141 @@ class WebhookHandler:
         # Reload settings in trade manager
         self.trade_manager.load_settings()
     
-    def process_webhook(self, request_data):
+    def process_webhook(self, data):
         """
-        Process a webhook request
+        Process incoming webhook data from TradingView
         
         Args:
-            request_data (dict): The request data from the webhook
+            data (dict): Webhook data containing trade information
             
         Returns:
-            dict: Result of processing the webhook
+            dict: Response with status and details
         """
-        # Check if we need to reset daily trades
-        self._check_reset_daily_trades()
-        
         try:
-            # Extract the alert message from the request data
-            force_test_mode = False
+            # Extract required fields
+            symbol = data.get('symbol')
+            direction = data.get('direction')
+            price = data.get('price')
+            stop = data.get('stop')
+            limit = data.get('limit')
+            size = data.get('size')
+            message = data.get('message', '')
             
-            if isinstance(request_data, dict):
-                # If it's already a dictionary (e.g., from a JSON request)
-                alert_message = request_data.get('message')
-                timestamp = request_data.get('timestamp', time.time())
-                # Sadece açıkça test_mode=True gönderilmişse test modunda çalıştır
-                force_test_mode = request_data.get('test_mode', False)
-            elif isinstance(request_data, str):
-                # If it's a string, assume it's the alert message
-                alert_message = request_data.strip()
-                timestamp = time.time()
-            else:
-                logger.error(f"Invalid request data format: {type(request_data)}")
-                return {"status": "error", "message": "Invalid request data format"}
+            # Validate required fields
+            if not all([symbol, direction]):
+                return {
+                    'status': 'error',
+                    'message': 'Missing required fields: symbol and direction are required'
+                }
+                
+            # Get trading settings
+            settings = self.settings_manager.get_settings()
+            trading_settings = settings.get('trading', {})
             
-            if not alert_message:
-                logger.error("No alert message found in request data")
-                return {"status": "error", "message": "No alert message found in request data"}
+            # Get default order type from settings
+            default_order_type = trading_settings.get('default_order_type', 'LIMIT')
             
-            # Log the incoming alert
-            logger.info(f"Received alert: {alert_message}")
-            
-            # Process the alert with the trade manager
-            # Varsayılan olarak her zaman gerçek işlem yap
-            # Ancak 'test_mode' parametresi açıkça True olarak gönderilmişse test yap
-            if force_test_mode:
-                logger.info("TEST MODE: Processing alert but no real trade will be executed")
-                result = self._test_process_alert(alert_message, timestamp)
-            else:
-                # Normal işlem yap - gerçek pozisyon aç
-                logger.info("LIVE MODE: Processing alert for real trade execution")
-                result = self.trade_manager.process_alert(alert_message, timestamp)
+            # Convert symbol to EPIC
+            epic = self._convert_symbol_to_epic(symbol)
+            if not epic:
+                return {
+                    'status': 'error',
+                    'message': f'Invalid symbol: {symbol}'
+                }
+                
+            # Validate direction
+            if direction not in ['BUY', 'SELL']:
+                return {
+                    'status': 'error',
+                    'message': f'Invalid direction: {direction}. Must be BUY or SELL'
+                }
+                
+            # Get position size
+            if not size:
+                size = self._get_position_size(epic)
+                
+            # Create position
+            result = self.ig_api.create_position(
+                epic=epic,
+                direction=direction,
+                size=size,
+                price=price,
+                stop=stop,
+                limit=limit,
+                use_limit_order=(default_order_type == 'LIMIT')
+            )
             
             # Log the result
-            if result.get('status') == 'success':
-                logger.info(f"Successfully processed alert: {result}")
-            else:
-                logger.warning(f"Failed to process alert: {result}")
+            self.logger.info(f"Webhook processed: {message}")
+            self.logger.info(f"Position result: {result}")
             
-            return result
+            return {
+                'status': 'success',
+                'message': 'Webhook processed successfully',
+                'details': result
+            }
             
         except Exception as e:
-            logger.error(f"Error processing webhook: {e}")
-            return {"status": "error", "message": f"Error processing webhook: {str(e)}"}
-    
-    def _test_process_alert(self, alert_message, timestamp):
+            self.logger.error(f"Error processing webhook: {str(e)}")
+            return {
+                'status': 'error',
+                'message': f'Error processing webhook: {str(e)}'
+            }
+            
+    def _convert_symbol_to_epic(self, symbol):
         """
-        Process an alert in test mode (no real trade execution)
+        Convert TradingView symbol to IG EPIC
         
         Args:
-            alert_message (str): The alert message
-            timestamp (float): Timestamp of the alert
+            symbol (str): TradingView symbol (e.g. 'MARKET:SYMBOL')
             
         Returns:
-            dict: Simulated processing result
+            str: IG EPIC code or None if not found
         """
-        # Parse the alert message
-        parse_result = self.trade_manager.trade_calculator.parse_alert_message(alert_message)
-        if not parse_result:
-            return {"status": "error", "message": "Failed to parse alert message"}
+        try:
+            # Remove 'MARKET:' prefix if present
+            if ':' in symbol:
+                symbol = symbol.split(':')[1]
+                
+            # Get ticker data
+            ticker_data = self.settings_manager.get_ticker_data()
+            
+            # Find matching EPIC
+            match = ticker_data[ticker_data['Symbol'] == symbol]
+            if not match.empty:
+                return match.iloc[0]['IG EPIC']
+                
+            return None
+            
+        except Exception as e:
+            self.logger.error(f"Error converting symbol to EPIC: {str(e)}")
+            return None
+            
+    def _get_position_size(self, epic):
+        """
+        Get default position size for an instrument
         
-        ticker, direction, opening_price, atr_values = parse_result
-        
-        # Try to get the EPIC code (main purpose of this test)
-        epic = self.trade_manager.get_epic(ticker)
-        
-        # Calculate trade parameters
-        trade_params = self.trade_manager.trade_calculator.calculate_trade_parameters(
-            ticker, direction, opening_price, atr_values
-        )
-        
-        if not trade_params:
-            return {"status": "error", "message": f"Failed to calculate trade parameters for {ticker}"}
-        
-        # Return test result
-        return {
-            "status": "success",
-            "message": f"TEST MODE: Processed alert for {ticker}",
-            "ticker": ticker,
-            "direction": direction,
-            "epic": epic,
-            "trade_params": trade_params,
-            "test_mode": True
-        }
+        Args:
+            epic (str): IG EPIC code
+            
+        Returns:
+            float: Position size in GBP
+        """
+        try:
+            # Get ticker data
+            ticker_data = self.settings_manager.get_ticker_data()
+            
+            # Find matching instrument
+            match = ticker_data[ticker_data['IG EPIC'] == epic]
+            if not match.empty:
+                return float(match.iloc[0]['Postion Size Max GBP'])
+                
+            # Default size if not found
+            return 100.0
+            
+        except Exception as e:
+            self.logger.error(f"Error getting position size: {str(e)}")
+            return 100.0
     
     def _check_reset_daily_trades(self):
         """Check if we need to reset daily trades tracking"""

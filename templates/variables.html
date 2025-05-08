@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>Değişkenler</h2>
+    
+    <div class="table-responsive">
+        <table class="table table-striped" id="variablesTable">
+            <thead>
+                <tr>
+                    <th>Sembol</th>
+                    <th>Yahoo Sembol</th>
+                    <th>EPIC</th>
+                    <th>Açılış Fiyatı Çarpanı</th>
+                    <th>Pip Değeri</th>
+                    <th>Spread</th>
+                    <th>Swap Long</th>
+                    <th>Swap Short</th>
+                    <th>İşlem Saatleri</th>
+                    <th>Temettü Tarihleri</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for symbol, data in ticker_data.items() %}
+                <tr>
+                    <td>{{ symbol }}</td>
+                    <td>{{ data.get('yahoo_symbol', '') }}</td>
+                    <td>{{ data.get('epic', '') }}</td>
+                    <td>{{ data.get('multiplier', '') }}</td>
+                    <td>{{ data.get('pip_value', '') }}</td>
+                    <td>{{ data.get('spread', '') }}</td>
+                    <td>{{ data.get('swap_long', '') }}</td>
+                    <td>{{ data.get('swap_short', '') }}</td>
+                    <td>{{ data.get('trading_hours', '') }}</td>
+                    <td>{{ data.get('dividend_dates', '')|join(', ') }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{% block scripts %}
+<script>
+$(document).ready(function() {
+    $('#variablesTable').DataTable({
+        "order": [[0, "asc"]],
+        "pageLength": 25,
+        "language": {
+            "url": "//cdn.datatables.net/plug-ins/1.10.24/i18n/Turkish.json"
+        }
+    });
+});
+</script>
+{% endblock %}
+{% endblock %} 

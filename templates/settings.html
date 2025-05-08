@@ -203,6 +203,36 @@
                                 </div>
                             </div>
                         </div>
+
+                        <!-- Order Type Settings -->
+                        <div class="row">
+                            <div class="col-md-12 mb-4">
+                                <div class="card h-100 border-left-info">
+                                    <div class="card-body">
+                                        <h5 class="card-title text-info"><i class="bi bi-gear"></i> Order Type Settings</h5>
+                                        <p class="card-text small text-muted mb-4">Configure how orders are executed</p>
+                                        
+                                        <div class="mb-3">
+                                            <label class="form-label">Default Order Type</label>
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="radio" name="defaultOrderType" id="orderTypeLimit" value="LIMIT" {% if trading.default_order_type == 'LIMIT' %}checked{% endif %}>
+                                                <label class="form-check-label" for="orderTypeLimit">
+                                                    Limit Order
+                                                    <small class="text-muted d-block">Orders will be placed at specified price levels</small>
+                                                </label>
+                                            </div>
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="radio" name="defaultOrderType" id="orderTypeMarket" value="MARKET" {% if trading.default_order_type == 'MARKET' %}checked{% endif %}>
+                                                <label class="form-check-label" for="orderTypeMarket">
+                                                    Market Order
+                                                    <small class="text-muted d-block">Orders will be executed immediately at current market price</small>
+                                                </label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                         
                         <button type="button" class="btn btn-success px-4" id="saveValidationRules">
                             <i class="bi bi-save"></i> Save Validation Rules
@@ -229,6 +259,9 @@
                         <button class="btn btn-sm btn-info" id="updateDividendDates">
                             <i class="bi bi-calendar"></i> Update Dividend Dates
                         </button>
+                        <button class="btn btn-sm btn-success" id="saveTickerChanges" style="display: none;">
+                            <i class="bi bi-save"></i> Save Changes
+                        </button>
                     </div>
                 </div>
                 <div class="card-body">
@@ -236,12 +269,13 @@
                         <strong>{{ ticker_count }}</strong> instruments loaded from ticker data file.
                     </div>
                     
-                    {% if ticker_data is defined and not ticker_data.empty %}
+                    <!-- Ticker Data Table -->
                     <div class="table-responsive">
                         <table class="table table-bordered table-hover table-sm" id="tickerTable" width="100%" cellspacing="0">
                             <thead>
                                 <tr>
                                     <th>Symbol</th>
+                                    <th>Yahoo Symbol</th>
                                     <th>IG EPIC</th>
                                     <th>ATR SL Period</th>
                                     <th>ATR SL Multiple</th>
@@ -249,29 +283,43 @@
                                     <th>ATR PT Multiple</th>
                                     <th>Max Position Size</th>
                                     <th>Next Dividend Date</th>
+                                    <th>Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {% for _, row in ticker_data.iterrows() %}
-                                <tr>
+                                <tr data-symbol="{{ row['Symbol'] }}">
                                     <td>{{ row['Symbol'] }}</td>
+                                    <td class="yahoo-symbol-cell">
+                                        <span class="symbol-display">{{ row['Yahoo Symbol'] if row['Yahoo Symbol'] and row['Yahoo Symbol'] != 'nan' and row['Yahoo Symbol'] != '<input type=' else '' }}</span>
+                                        <input type="text" class="form-control form-control-sm editable-field" 
+                                               data-field="Yahoo Symbol" 
+                                               value="{{ row['Yahoo Symbol'] if row['Yahoo Symbol'] and row['Yahoo Symbol'] != 'nan' and row['Yahoo Symbol'] != '<input type=' else '' }}"
+                                               style="display: none;">
+                                    </td>
                                     <td>{{ row['IG EPIC'] if row['IG EPIC'] != '?' else 'Not Set' }}</td>
                                     <td>{{ row['ATR Stop Loss Period'] }}</td>
                                     <td>{{ row['ATR Stop Loss Multiple'] }}</td>
                                     <td>{{ row['ATR Profit Target Period'] }}</td>
                                     <td>{{ row['ATR Profit Multiple'] }}</td>
                                     <td>{{ row['Postion Size Max GBP'] }}</td>
-                                    <td>{{ row['Next dividend date'] if row['Next dividend date'] else 'No data' }}</td>
+                                    <td>{{ row['Next dividend date'] if row['Next dividend date'] and row['Next dividend date'] != 'nan' else 'No data' }}</td>
+                                    <td>
+                                        <button class="btn btn-sm btn-primary edit-row" title="Edit">
+                                            <i class="bi bi-pencil"></i>
+                                        </button>
+                                        <button class="btn btn-sm btn-success save-row" title="Save" style="display: none;">
+                                            <i class="bi bi-check"></i>
+                                        </button>
+                                        <button class="btn btn-sm btn-danger cancel-edit" title="Cancel" style="display: none;">
+                                            <i class="bi bi-x"></i>
+                                        </button>
+                                    </td>
                                 </tr>
                                 {% endfor %}
                             </tbody>
                         </table>
                     </div>
-                    {% else %}
-                    <div class="alert alert-warning">
-                        <i class="bi bi-exclamation-triangle"></i> No ticker data found. Please upload a CSV file with instrument data.
-                    </div>
-                    {% endif %}
                 </div>
             </div>
         </div>
@@ -328,78 +376,163 @@
 
 {% block extra_js %}
 <script>
-    // Copy webhook URL to clipboard
-    document.getElementById('copyWebhook').addEventListener('click', function() {
-        var webhookUrl = document.getElementById('webhookUrl');
-        webhookUrl.select();
-        document.execCommand('copy');
-        alert('Webhook URL copied to clipboard!');
-    });
-    
-    // Test webhook button - redirect to test page
-    document.getElementById('testWebhook').addEventListener('click', function() {
-        window.location.href = "{{ url_for('test_webhook') }}";
-    });
-    
-    // Upload new data button
-    document.getElementById('uploadNewData').addEventListener('click', function() {
-        var uploadModal = new bootstrap.Modal(document.getElementById('uploadModal'));
-        uploadModal.show();
-    });
-    
-    // Refresh ticker data
-    document.getElementById('refreshTickerData').addEventListener('click', function() {
-        window.location.reload();
-    });
-    
-    // Update dividend dates
-    document.getElementById('updateDividendDates').addEventListener('click', function() {
-        console.log("Update dividend dates button clicked"); // Debug için log ekliyoruz
-        if (confirm('Do you want to update dividend dates from Yahoo Finance? This may take a few minutes.')) {
-            // Show a loading indicator
-            this.innerHTML = '<i class="bi bi-hourglass-split"></i> Updating...';
-            this.disabled = true;
+    $(document).ready(function() {
+        // Save Validation Rules
+        $('#saveValidationRules').click(function() {
+            // Prepare data
+            const data = {
+                validation: {
+                    check_existing_position: $('#checkExistingPosition').is(':checked'),
+                    check_same_day_trades: $('#checkSameDayTrades').is(':checked'),
+                    check_open_position_limit: $('#checkOpenPositionLimit').is(':checked'),
+                    check_alert_timestamp: $('#checkAlertTimestamp').is(':checked'),
+                    check_dividend_date: $('#checkDividendDate').is(':checked'),
+                    check_max_deal_age: $('#checkMaxDealAge').is(':checked'),
+                    check_total_positions_and_orders: $('#checkTotalPositionsAndOrders').is(':checked')
+                },
+                trading: {
+                    max_open_positions: parseInt($('#maxOpenPositions').val()),
+                    alert_max_age_seconds: parseInt($('#alertMaxAge').val()),
+                    max_deal_age_minutes: parseInt($('#maxDealAge').val()),
+                    max_total_positions_and_orders: parseInt($('#maxTotalPositionsAndOrders').val()),
+                    default_order_type: $('input[name="defaultOrderType"]:checked').val()
+                }
+            };
             
-            console.log("Making AJAX request to /api/update_dividend_dates"); // Başka bir debug log
+            // Show loading state
+            const button = $(this);
+            const originalText = button.html();
+            button.html('<i class="bi bi-hourglass-split"></i> Saving...');
+            button.prop('disabled', true);
             
             // Make API request
             $.ajax({
-                url: '/api/update_dividend_dates',
+                url: '/api/save_settings',
                 type: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify(data),
                 success: function(response) {
-                    console.log("AJAX Success:", response); // Başarılı cevap logu
                     if (response.status === 'success') {
-                        alert('Dividend dates updated successfully!');
-                        window.location.reload();
+                        alert('Settings saved successfully!');
+                        button.removeClass('btn-warning').addClass('btn-success');
+                        button.html('<i class="bi bi-check-circle"></i> Save Changes');
                     } else {
-                        alert('Failed to update dividend dates: ' + response.message);
+                        alert('Failed to save settings: ' + response.message);
                     }
                 },
                 error: function(xhr, status, error) {
-                    console.error("AJAX Error:", status, error); // Hata logu
-                    console.error("Response:", xhr.responseText); // Yanıt detayı
-                    alert('Error updating dividend dates. Please check the server logs.');
+                    alert('Error saving settings. Please check the server logs.');
                 },
                 complete: function() {
-                    console.log("AJAX request complete"); // Tamamlama logu
                     // Restore button state
-                    const button = document.getElementById('updateDividendDates');
-                    button.innerHTML = '<i class="bi bi-calendar"></i> Update Dividend Dates';
-                    button.disabled = false;
+                    button.html(originalText);
+                    button.prop('disabled', false);
                 }
             });
-        }
-    });
-    
-    // Initialize DataTable for ticker data
-    $(document).ready(function() {
-        var hasTable = document.getElementById('tickerTable');
-        if (hasTable) {
-            $('#tickerTable').DataTable({
-                pageLength: 25,
-                order: [[0, 'asc']]
+        });
+        
+        // Initialize DataTable
+        var tickerTable = $('#tickerTable').DataTable({
+            pageLength: 25,
+            order: [[0, 'asc']],
+            columnDefs: [
+                {
+                    targets: [1], // Yahoo Symbol column
+                    orderable: true
+                },
+                {
+                    targets: [9], // Actions column
+                    orderable: false
+                }
+            ]
+        });
+
+        // Edit row button click
+        $(document).on('click', '.edit-row', function() {
+            var row = $(this).closest('tr');
+            row.find('.symbol-display').hide();
+            row.find('.editable-field').show();
+            row.find('.edit-row').hide();
+            row.find('.save-row, .cancel-edit').show();
+            
+            // Focus on the input
+            row.find('.editable-field').focus();
+        });
+
+        // Save row button click
+        $(document).on('click', '.save-row', function() {
+            var row = $(this).closest('tr');
+            var symbol = row.data('symbol');
+            var input = row.find('.editable-field');
+            var value = input.val().trim();
+            
+            // Show loading state
+            var button = $(this);
+            var originalHtml = button.html();
+            button.html('<i class="bi bi-hourglass-split"></i>').prop('disabled', true);
+            
+            // Save changes
+            $.ajax({
+                url: '/api/update_ticker_data',
+                type: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({
+                    changes: [{
+                        symbol: symbol,
+                        field: 'Yahoo Symbol',
+                        value: value
+                    }]
+                }),
+                success: function(response) {
+                    if (response.status === 'success') {
+                        // Update the display
+                        row.find('.symbol-display').text(value).show();
+                        input.hide().val(value);
+                        row.find('.save-row, .cancel-edit').hide();
+                        row.find('.edit-row').show();
+                        
+                        // Show success message
+                        var alertDiv = $('<div class="alert alert-success alert-dismissible fade show" role="alert">')
+                            .text('Changes saved successfully!')
+                            .append('<button type="button" class="btn-close" data-bs-dismiss="alert"></button>')
+                            .insertAfter(row.closest('.table-responsive'))
+                            .delay(3000)
+                            .fadeOut(function() { $(this).remove(); });
+                    } else {
+                        alert('Failed to save changes: ' + response.message);
+                    }
+                },
+                error: function(xhr, status, error) {
+                    alert('Error saving changes. Please check the server logs.');
+                },
+                complete: function() {
+                    // Restore button state
+                    button.html(originalHtml).prop('disabled', false);
+                }
             });
-        }
+        });
+
+        // Cancel edit button click
+        $(document).on('click', '.cancel-edit', function() {
+            var row = $(this).closest('tr');
+            var input = row.find('.editable-field');
+            
+            // Restore original value
+            input.val(row.find('.symbol-display').text());
+            
+            // Hide/show elements
+            row.find('.symbol-display').show();
+            input.hide();
+            row.find('.save-row, .cancel-edit').hide();
+            row.find('.edit-row').show();
+        });
+
+        // Handle Enter key in input fields
+        $(document).on('keypress', '.editable-field', function(e) {
+            if (e.which === 13) { // Enter key
+                $(this).closest('tr').find('.save-row').click();
+            }
+        });
         
         // Test IG API connection
         $('#testConnection').click(function() {
@@ -463,20 +596,11 @@
         $('#saveIgSettings').click(function() {
             // Prepare data
             const data = {
-                username: $('#igUsername').val(),
-                password: $('#igPassword').val(),
-                api_key: $('#igApiKey').val(),
-                demo: $('#igDemo').is(':checked')
+                ig_username: $('#igUsername').val(),
+                ig_password: $('#igPassword').val(),
+                ig_api_key: $('#igApiKey').val(),
+                ig_demo: $('#igDemo').is(':checked')
             };
-            
-            // Eğer şifre veya API anahtarı ***** formatında ise, sunucuya gönderme
-            if (data.password === '*****' || data.password === '') {
-                delete data.password;  // Şifreyi gönderme
-            }
-            
-            if (data.api_key === '*****' || data.api_key === '') {
-                delete data.api_key;  // API anahtarını gönderme
-            }
             
             // Show loading state
             const button = $(this);
@@ -504,53 +628,41 @@
                 },
                 complete: function() {
                     // Restore button state
+                    button.html(originalText);
                     button.prop('disabled', false);
                 }
             });
         });
         
-        // Save Validation Rules
-        $('#saveValidationRules').click(function() {
-            // Prepare data
-            const data = {
-                validation: {
-                    check_existing_position: $('#checkExistingPosition').is(':checked'),
-                    check_same_day_trades: $('#checkSameDayTrades').is(':checked'),
-                    check_open_position_limit: $('#checkOpenPositionLimit').is(':checked'),
-                    check_alert_timestamp: $('#checkAlertTimestamp').is(':checked'),
-                    check_dividend_date: $('#checkDividendDate').is(':checked'),
-                    check_max_deal_age: $('#checkMaxDealAge').is(':checked'),
-                    check_total_positions_and_orders: $('#checkTotalPositionsAndOrders').is(':checked')
-                },
-                trading: {
-                    max_open_positions: parseInt($('#maxOpenPositions').val()),
-                    alert_max_age_seconds: parseInt($('#alertMaxAge').val()),
-                    max_deal_age_minutes: parseInt($('#maxDealAge').val()),
-                    max_total_positions_and_orders: parseInt($('#maxTotalPositionsAndOrders').val())
-                }
-            };
-            
+        // Copy Webhook URL
+        $('#copyWebhook').click(function() {
+            const webhookUrl = $('#webhookUrl');
+            webhookUrl.select();
+            document.execCommand('copy');
+            alert('Webhook URL copied to clipboard!');
+        });
+        
+        // Test Webhook
+        $('#testWebhook').click(function() {
             // Show loading state
             const button = $(this);
             const originalText = button.html();
-            button.html('<i class="bi bi-hourglass-split"></i> Saving...');
+            button.html('<i class="bi bi-hourglass-split"></i> Testing...');
             button.prop('disabled', true);
             
             // Make API request
             $.ajax({
-                url: '/api/save_validation_rules',
+                url: '/api/test_webhook',
                 type: 'POST',
-                contentType: 'application/json',
-                data: JSON.stringify(data),
                 success: function(response) {
                     if (response.status === 'success') {
-                        alert('Validation rules saved successfully!');
+                        alert('Webhook test successful!');
                     } else {
-                        alert('Failed to save validation rules: ' + response.message);
+                        alert('Webhook test failed: ' + response.message);
                     }
                 },
                 error: function(xhr, status, error) {
-                    alert('Error saving validation rules. Please check the server logs.');
+                    alert('Error testing webhook. Please check the server logs.');
                 },
                 complete: function() {
                     // Restore button state
@@ -560,11 +672,16 @@
             });
         });
         
+        // Upload New Data
+        $('#uploadNewData').click(function() {
+            $('#uploadModal').modal('show');
+        });
+        
         // Upload Button
         $('#uploadButton').click(function() {
-            const fileInput = document.getElementById('csvFile');
-            if (!fileInput.files || fileInput.files.length === 0) {
-                alert('Please select a CSV file to upload');
+            const fileInput = $('#csvFile')[0];
+            if (!fileInput.files.length) {
+                alert('Please select a file to upload');
                 return;
             }
             
@@ -573,6 +690,7 @@
             
             // Show loading state
             const button = $(this);
+            const originalText = button.html();
             button.html('<i class="bi bi-hourglass-split"></i> Uploading...');
             button.prop('disabled', true);
             
@@ -585,27 +703,86 @@
                 contentType: false,
                 success: function(response) {
                     if (response.status === 'success') {
-                        alert('Ticker data uploaded successfully!');
-                        window.location.reload();
+                        alert('File uploaded successfully!');
+                        location.reload();
                     } else {
-                        alert('Failed to upload ticker data: ' + response.message);
+                        alert('Failed to upload file: ' + response.message);
                     }
                 },
                 error: function(xhr, status, error) {
-                    alert('Error uploading ticker data. Please check the server logs.');
+                    alert('Error uploading file. Please check the server logs.');
                 },
                 complete: function() {
                     // Restore button state
-                    button.html('Upload');
+                    button.html(originalText);
                     button.prop('disabled', false);
-                    
-                    // Close modal
                     $('#uploadModal').modal('hide');
                 }
             });
         });
         
-        // Function to show edit field modal
+        // Refresh Ticker Data
+        $('#refreshTickerData').click(function() {
+            // Show loading state
+            const button = $(this);
+            const originalText = button.html();
+            button.html('<i class="bi bi-hourglass-split"></i> Refreshing...');
+            button.prop('disabled', true);
+            
+            // Make API request
+            $.ajax({
+                url: '/api/refresh_ticker_data',
+                type: 'POST',
+                success: function(response) {
+                    if (response.status === 'success') {
+                        alert('Ticker data refreshed successfully!');
+                        location.reload();
+                    } else {
+                        alert('Failed to refresh ticker data: ' + response.message);
+                    }
+                },
+                error: function(xhr, status, error) {
+                    alert('Error refreshing ticker data. Please check the server logs.');
+                },
+                complete: function() {
+                    // Restore button state
+                    button.html(originalText);
+                    button.prop('disabled', false);
+                }
+            });
+        });
+        
+        // Update Dividend Dates
+        $('#updateDividendDates').click(function() {
+            // Show loading state
+            const button = $(this);
+            const originalText = button.html();
+            button.html('<i class="bi bi-hourglass-split"></i> Updating...');
+            button.prop('disabled', true);
+            
+            // Make API request
+            $.ajax({
+                url: '/api/update_dividend_dates',
+                type: 'POST',
+                success: function(response) {
+                    if (response.status === 'success') {
+                        alert('Dividend dates updated successfully!');
+                        location.reload();
+                    } else {
+                        alert('Failed to update dividend dates: ' + response.message);
+                    }
+                },
+                error: function(xhr, status, error) {
+                    alert('Error updating dividend dates. Please check the server logs.');
+                },
+                complete: function() {
+                    // Restore button state
+                    button.html(originalText);
+                    button.prop('disabled', false);
+                }
+            });
+        });
+        
         function showEditFieldModal(fieldName, currentValue, fieldType) {
             $('#editFieldLabel').text(`Edit ${fieldName}`);
             $('#editFieldInput').val(currentValue);

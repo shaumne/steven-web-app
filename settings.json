@@ -20,5 +20,9 @@
         "check_dividend_date": true,
         "check_max_deal_age": true,
         "check_total_positions_and_orders": true
-    }
+    },
+    "ig_username": "mailbox_sm",
+    "ig_password": "Kenilworth123",
+    "ig_api_key": "6f17bcadc89fac93cbde9f68198083692901f0c2",
+    "ig_demo": true
 }
