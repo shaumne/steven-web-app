@@ -420,6 +420,9 @@ def update_ticker_data_dividend_dates(csv_file_path="ticker_data.csv"):
         if 'Next dividend date' not in df.columns:
             df['Next dividend date'] = None
         
+        # Ensure the column is string type
+        df['Next dividend date'] = df['Next dividend date'].astype('object')
+        
         # Process each row in the DataFrame
         update_count = 0
         for index, row in df.iterrows():
