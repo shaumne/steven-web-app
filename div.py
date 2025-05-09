@@ -3,6 +3,12 @@ import pandas as pd
 import csv
 from datetime import datetime, date
 import os
+import logging
+
+# Cache konumunu projenin bulunduğu dizine ayarla
+cache_dir = os.path.join(os.path.dirname(__file__), '.cache', 'yfinance')
+os.makedirs(cache_dir, exist_ok=True)
+yf.set_tz_cache_location(cache_dir)
 
 # Mapping dictionary for exchange prefixes
 EXCHANGE_TO_YAHOO_MAPPING = {

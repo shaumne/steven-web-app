@@ -199,15 +199,6 @@
                                             <label class="form-check-label" for="checkDividendDate">Avoid dividend dates</label>
                                             <div class="text-muted small">Doesn't trade on dividend distribution days</div>
                                         </div>
-
-                                        <div class="mb-3">
-                                            <label for="defaultOrderType" class="form-label">Default Order Type</label>
-                                            <select class="form-control" id="defaultOrderType">
-                                                <option value="LIMIT" {% if trading.default_order_type == 'LIMIT' %}selected{% endif %}>Limit Order</option>
-                                                <option value="MARKET" {% if trading.default_order_type == 'MARKET' %}selected{% endif %}>Market Order</option>
-                                            </select>
-                                            <div class="text-muted small">Choose default order type for trades</div>
-                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -291,6 +282,7 @@
                                     <th>ATR PT Period</th>
                                     <th>ATR PT Multiple</th>
                                     <th>Max Position Size</th>
+                                    <th>Opening Price Multiple</th>
                                     <th>Next Dividend Date</th>
                                     <th>Actions</th>
                                 </tr>
@@ -312,6 +304,7 @@
                                     <td>{{ row['ATR Profit Target Period'] }}</td>
                                     <td>{{ row['ATR Profit Multiple'] }}</td>
                                     <td>{{ row['Postion Size Max GBP'] }}</td>
+                                    <td>{{ row['Opening Price Multiple'] }}</td>
                                     <td>{{ row['Next dividend date'] if row['Next dividend date'] and row['Next dividend date'] != 'nan' else 'No data' }}</td>
                                     <td>
                                         <button class="btn btn-sm btn-primary edit-row" title="Edit">
@@ -450,7 +443,11 @@
                     orderable: true
                 },
                 {
-                    targets: [9], // Actions column
+                    targets: [8], // Opening Price Multiple column
+                    orderable: true
+                },
+                {
+                    targets: [10], // Actions column
                     orderable: false
                 }
             ]

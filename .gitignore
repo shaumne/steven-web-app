@@ -115,3 +115,27 @@ logs/
 # Sensitive data
 config_secret.py
 credentials.json
+
+# Cache directories
+.cache/
+__pycache__/
+*.pyc
+
+# Environment files
+.env
+venv/
+env/
+
+# IDE files
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Data files
+*.csv
+!ticker_data.csv
+settings.json
+users.json

@@ -1193,7 +1193,7 @@ def dashboard_settings():
             'alert_max_age_seconds': 5,
             'max_deal_age_minutes': 60,
             'max_total_positions_and_orders': 10,
-            'default_order_type': 'LIMIT'
+            'default_order_type': "LIMIT"
         })
         
         # Get API connection status
@@ -1497,7 +1497,12 @@ def save_settings():
         current_settings['trading']['alert_max_age_seconds'] = int(data.get('alert_max_age_seconds', current_settings['trading'].get('alert_max_age_seconds', 5)))
         current_settings['trading']['max_deal_age_minutes'] = int(data.get('max_deal_age_minutes', current_settings['trading'].get('max_deal_age_minutes', 60)))
         current_settings['trading']['max_total_positions_and_orders'] = int(data.get('max_total_positions_and_orders', current_settings['trading'].get('max_total_positions_and_orders', 10)))
-        current_settings['trading']['default_order_type'] = data.get('default_order_type', current_settings['trading'].get('default_order_type', 'LIMIT'))
+        
+        # Radio button'dan gelen order type değerini kullan
+        order_type = data.get('trading', {}).get('default_order_type', 'LIMIT')
+        if order_type not in ['LIMIT', 'MARKET']:
+            order_type = 'LIMIT'  # Geçersiz değer durumunda varsayılan olarak LIMIT kullan
+        current_settings['trading']['default_order_type'] = order_type
         
         # Update validation settings
         if 'validation' not in current_settings:
