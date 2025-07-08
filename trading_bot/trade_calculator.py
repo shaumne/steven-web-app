@@ -178,14 +178,37 @@ class TradeCalculator:
                 logger.warning(f"ATR Take Profit value is zero or negative: {atr_tp}. Using default 2% of price.")
                 atr_tp = 0.02 * original_price
             
-            # CSV'den gelen çarpanlarla Stop Loss ve Take Profit hesapla
-            # IG API her zaman positif mesafe değerleri bekler
-            stop_distance = abs(atr_sl * atr_sl_multiple)
-            limit_distance = abs(atr_tp * atr_tp_multiple)
+            # Stop ve limit seviyelerini hesapla
+            if direction == "UP":  # SELL sinyali
+                # UP (SELL) için:
+                # Stop seviyesi = opening_price + (atr_sl * atr_sl_multiple)
+                # Limit seviyesi = opening_price - (atr_tp * atr_tp_multiple)
+                stop_level = original_price + (atr_sl * atr_sl_multiple)
+                limit_level = original_price - (atr_tp * atr_tp_multiple)
+                
+                # Stop ve limit mesafeleri (pozitif değerler)
+                stop_distance = abs(stop_level - price_level)
+                limit_distance = abs(price_level - limit_level)
+                
+                logger.info(f"UP (SELL) - Stop level: {stop_level} = {original_price} + ({atr_sl} * {atr_sl_multiple})")
+                logger.info(f"UP (SELL) - Limit level: {limit_level} = {original_price} - ({atr_tp} * {atr_tp_multiple})")
+            else:  # DOWN (BUY) sinyali
+                # DOWN (BUY) için:
+                # Stop seviyesi = opening_price - (atr_sl * atr_sl_multiple)
+                # Limit seviyesi = opening_price + (atr_tp * atr_tp_multiple)
+                stop_level = original_price - (atr_sl * atr_sl_multiple)
+                limit_level = original_price + (atr_tp * atr_tp_multiple)
+                
+                # Stop ve limit mesafeleri (pozitif değerler)
+                stop_distance = abs(price_level - stop_level)
+                limit_distance = abs(limit_level - price_level)
+                
+                logger.info(f"DOWN (BUY) - Stop level: {stop_level} = {original_price} - ({atr_sl} * {atr_sl_multiple})")
+                logger.info(f"DOWN (BUY) - Limit level: {limit_level} = {original_price} + ({atr_tp} * {atr_tp_multiple})")
             
             # Log hesaplanan değerleri
-            logger.info(f"Raw stop_distance before normalization: {stop_distance} (ATR {atr_sl} * {atr_sl_multiple})")
-            logger.info(f"Raw limit_distance before normalization: {limit_distance} (ATR {atr_tp} * {atr_tp_multiple})")
+            logger.info(f"Raw stop_distance: {stop_distance}")
+            logger.info(f"Raw limit_distance: {limit_distance}")
             
             # IG API'nin BUY ve SELL için mesafeleri nasıl kullanacağı:
             # BUY: stop_level = level - stop_distance, limit_level = level + limit_distance
@@ -271,7 +294,8 @@ class TradeCalculator:
             logger.info(f"ATR SL Period: {atr_sl_period}, Multiple: {atr_sl_multiple}")
             logger.info(f"ATR TP Period: {atr_tp_period}, Multiple: {atr_tp_multiple}")
             logger.info(f"ATR Values - Stop: {atr_sl}, Take Profit: {atr_tp}")
-            logger.info(f"Raw Stop Distance: {stop_distance}, Raw Limit Distance: {limit_distance}")
+            logger.info(f"Stop Level: {stop_level}, Limit Level: {limit_level}")
+            logger.info(f"Stop Distance: {stop_distance}, Limit Distance: {limit_distance}")
             
             # Return the trade parameters
             return {
@@ -282,6 +306,8 @@ class TradeCalculator:
                 'entry_price': round(entry_price, 4),        # Normalize edilmiş fiyat
                 'stop_distance': round(stop_distance, 2),    # 2 ondalık basamak için yuvarlanmış (eskiden 1 idi)
                 'limit_distance': round(limit_distance, 2),  # 2 ondalık basamak için yuvarlanmış (eskiden 1 idi)
+                'stop_level': round(stop_level, 4),          # Hesaplanan stop seviyesi
+                'limit_level': round(limit_level, 4),        # Hesaplanan limit seviyesi
                 'position_size': round(position_size, 2),    # Tutarlı olması için burayı da round içine aldım
                 'max_position_size_gbp': max_position_size_gbp
             }

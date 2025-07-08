@@ -372,7 +372,7 @@ class IGClient:
             'dealReference': deal_reference
         }
     
-    def create_position(self, epic, direction, size, price=None, stop=None, limit=None, use_limit_order=None):
+    def create_position(self, epic, direction, size, price=None, stop=None, limit=None, use_limit_order=None, expiry=None):
         """
         Create a new position
         
@@ -384,6 +384,7 @@ class IGClient:
             stop (float, optional): Stop loss price
             limit (float, optional): Take profit price
             use_limit_order (bool, optional): Whether to use limit order. If None, uses default_order_type
+            expiry (str, optional): Position expiry, default is "DFB" (Daily Funded Bet)
             
         Returns:
             dict: Response from IG API
@@ -396,6 +397,10 @@ class IGClient:
         if use_limit_order is None:
             use_limit_order = (self.default_order_type == 'LIMIT')
             
+        # Set default expiry if not provided
+        if expiry is None:
+            expiry = "DFB"  # Daily Funded Bet - default for stocks
+            
         # Prepare the position data
         position_data = {
             "epic": epic,
@@ -403,7 +408,9 @@ class IGClient:
             "size": str(size),
             "orderType": "LIMIT" if use_limit_order else "MARKET",
             "guaranteedStop": False,
-            "forceOpen": True
+            "forceOpen": True,
+            "expiry": expiry,
+            "currencyCode": "GBP"  # Para birimi kodu - her zaman GBP kullanıyoruz
         }
         
         # Add price for limit orders
@@ -552,6 +559,11 @@ class IGClient:
         limit_distance = abs(float(limit_distance)) if limit_distance else 0
         
         logger.info(f"Using positive distances: Stop={stop_distance}, Limit={limit_distance}")
+        
+        # Expiry değeri için varsayılan "DFB" (Daily Funded Bet) kullanılır
+        # DFB genellikle hisse senetleri için kullanılır ve açık kalabilir
+        if not expiry:
+            expiry = "DFB"
         
         payload = {
             "epic": epic,
@@ -881,20 +893,25 @@ class IGClient:
             "epic": epic,
             "direction": direction,
             "size": str(size),
-            "orderType": "LIMIT" if use_limit_order else "MARKET",
+            "type": "LIMIT", # Working order type
             "level": str(level),
-            "guaranteedStop": False
+            "timeInForce": "GOOD_TILL_CANCELLED",
+            "guaranteedStop": False,
+            "forceOpen": True,
+            "currencyCode": "GBP",
+            "expiry": "DFB"  # Daily Funded Bet - required for working orders
         }
         
         # Add stop loss if provided
         if stop:
             order_data["stopLevel"] = str(stop)
-            order_data["stopDistance"] = None
             
         # Add take profit if provided
         if limit:
-            order_data["profitLevel"] = str(limit)
-            order_data["profitDistance"] = None
+            order_data["limitLevel"] = str(limit)
+        
+        # Log the request data
+        logger.info(f"Creating working order with data: {json.dumps(order_data)}")
         
         # Make the API request
         response = self.session.post(
@@ -902,6 +919,10 @@ class IGClient:
             headers=self.headers,
             json=order_data
         )
+        
+        # Log the full response
+        logger.info(f"Working order response status: {response.status_code}")
+        logger.info(f"Working order response body: {response.text}")
         
         if response.status_code != 200:
             logger.error(f"Failed to create working order: {response.text}")

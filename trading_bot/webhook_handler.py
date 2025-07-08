@@ -14,7 +14,7 @@ class WebhookHandler:
     Handler for incoming webhook requests from TradingView
     """
     
-    def __init__(self, ig_api, settings_manager):
+    def __init__(self, ig_api=None, settings_manager=None):
         """Initialize the webhook handler"""
         self.ig_api = ig_api
         self.settings_manager = settings_manager
@@ -85,20 +85,57 @@ class WebhookHandler:
             if not size:
                 size = self._get_position_size(epic)
                 
-            # Create position
-            result = self.ig_api.create_position(
-                epic=epic,
-                direction=direction,
-                size=size,
-                price=price,
-                stop=stop,
-                limit=limit,
-                use_limit_order=(default_order_type == 'LIMIT')
-            )
+            # Log the order type being used
+            logger.info(f"Using order type from settings: {default_order_type}")
+            
+            # Get market details to check if market is closed
+            market_details = self.ig_api._get_market_details(epic)
+            market_status = "CLOSED"  # Default to closed if we can't determine
+            
+            if market_details:
+                market_status = market_details.get('market_status', 'CLOSED')
+            
+            logger.info(f"Market status for {symbol}: {market_status}")
+            
+            # If market is closed or default is WORKING_ORDER, use working order
+            if market_status in ["CLOSED", "EDITS_ONLY"] or default_order_type == "WORKING_ORDER":
+                logger.info(f"Creating WORKING ORDER for {symbol} - Market status: {market_status}")
+                
+                # Use the provided stop and limit values directly
+                stop_level = stop
+                limit_level = limit
+                
+                # Log the levels
+                logger.info(f"Working order levels - Price: {price}, Stop: {stop_level}, Limit: {limit_level}")
+                
+                # Create working order
+                result = self.ig_api.create_working_order(
+                    epic=epic,
+                    direction=direction,
+                    size=size,
+                    level=price,
+                    stop=stop_level,
+                    limit=limit_level
+                )
+            else:
+                # Use regular position for open markets
+                use_limit_order = (default_order_type == 'LIMIT')
+                
+                # Create position
+                result = self.ig_api.create_position(
+                    epic=epic,
+                    direction=direction,
+                    size=size,
+                    price=price,
+                    stop=stop,
+                    limit=limit,
+                    use_limit_order=use_limit_order,
+                    expiry="DFB"  # Daily Funded Bet - default for stocks
+                )
             
             # Log the result
-            self.logger.info(f"Webhook processed: {message}")
-            self.logger.info(f"Position result: {result}")
+            logger.info(f"Webhook processed: {message}")
+            logger.info(f"Position result: {result}")
             
             return {
                 'status': 'success',
@@ -107,7 +144,7 @@ class WebhookHandler:
             }
             
         except Exception as e:
-            self.logger.error(f"Error processing webhook: {str(e)}")
+            logger.error(f"Error processing webhook: {str(e)}")
             return {
                 'status': 'error',
                 'message': f'Error processing webhook: {str(e)}'
@@ -124,22 +161,32 @@ class WebhookHandler:
             str: IG EPIC code or None if not found
         """
         try:
-            # Remove 'MARKET:' prefix if present
-            if ':' in symbol:
-                symbol = symbol.split(':')[1]
-                
+            logger = logging.getLogger(__name__)
+            logger.info(f"Converting symbol to EPIC: {symbol}")
+            
             # Get ticker data
             ticker_data = self.settings_manager.get_ticker_data()
             
-            # Find matching EPIC
+            # Önce tam sembole göre ara (LSE_DLY:SRP gibi formatları da kabul et)
             match = ticker_data[ticker_data['Symbol'] == symbol]
             if not match.empty:
+                logger.info(f"Found exact match for {symbol}: {match.iloc[0]['IG EPIC']}")
                 return match.iloc[0]['IG EPIC']
-                
+            
+            # Tam eşleşme yoksa, ':' karakterini bölerek dene
+            if ':' in symbol:
+                base_symbol = symbol.split(':')[1]
+                match = ticker_data[ticker_data['Symbol'].str.contains(base_symbol, case=True, na=False)]
+                if not match.empty:
+                    logger.info(f"Found partial match for {symbol} using {base_symbol}: {match.iloc[0]['IG EPIC']}")
+                    return match.iloc[0]['IG EPIC']
+                    
+            logger.warning(f"No EPIC found for symbol: {symbol}")
             return None
             
         except Exception as e:
-            self.logger.error(f"Error converting symbol to EPIC: {str(e)}")
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error converting symbol to EPIC: {str(e)}")
             return None
             
     def _get_position_size(self, epic):
@@ -165,7 +212,8 @@ class WebhookHandler:
             return 100.0
             
         except Exception as e:
-            self.logger.error(f"Error getting position size: {str(e)}")
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error getting position size: {str(e)}")
             return 100.0
     
     def _check_reset_daily_trades(self):

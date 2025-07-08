@@ -119,13 +119,24 @@ def webhook():
         # Get request data
         if request.is_json:
             data = request.get_json()
+            # Eğer JSON nesnesinde 'message' alanı varsa, bu mesajı işliyoruz
+            if isinstance(data, dict) and 'message' in data:
+                webhook_text = data['message']
+                logging.info(f"Processing webhook message from JSON: {webhook_text}")
+                # Metin mesajını işle
+                result = process_tradingview_alert(webhook_text)
+                return jsonify(result)
+            else:
+                # Normal JSON nesnesini olduğu gibi işle
+                logging.info(f"Processing webhook JSON data: {data}")
+                return jsonify(webhook_handler.process_webhook(data))
         else:
-            data = request.data.decode('utf-8')
-        
-        # Process the webhook
-        result = webhook_handler.process_webhook(data)
-        
-        return jsonify(result)
+            # Bu bir metin (text) mesajı, direkt ayrıştır
+            webhook_text = request.data.decode('utf-8')
+            logging.info(f"Processing webhook text data: {webhook_text}")
+            # Metin mesajını işle
+            result = process_tradingview_alert(webhook_text)
+            return jsonify(result)
         
     except Exception as e:
         logging.error(f"Error in webhook endpoint: {e}")
@@ -133,6 +144,193 @@ def webhook():
             "status": "error",
             "message": f"Error processing webhook: {str(e)}"
         }), 500
+
+def process_tradingview_alert(alert_text):
+    """Process TradingView alert text"""
+    try:
+        logging.info(f"Processing TradingView alert: {alert_text}")
+        
+        # Parse alert text (format: SYMBOL DIRECTION PRICE [...other values])
+        parts = alert_text.strip().split()
+        if len(parts) < 3:
+            logging.error(f"Invalid alert format: {alert_text}")
+            return {
+                "status": "error",
+                "message": f"Invalid alert format: {alert_text}. Expected format: SYMBOL DIRECTION PRICE [...]"
+            }
+        
+        symbol = parts[0]
+        direction_text = parts[1].upper()
+        price = float(parts[2])
+        
+        # Convert direction text to API direction
+        if direction_text == "UP" or direction_text == "LONG" or direction_text == "BUY":
+            direction = "BUY"
+        elif direction_text == "DOWN" or direction_text == "SHORT" or direction_text == "SELL":
+            direction = "SELL"
+        else:
+            logging.error(f"Invalid direction: {direction_text}")
+            return {
+                "status": "error", 
+                "message": f"Invalid direction: {direction_text}"
+            }
+        
+        logging.info(f"Parsed TradingView alert - Symbol: {symbol}, Direction: {direction}, Price: {price}")
+            
+        # Get ticker data to find EPIC code
+        try:
+            settings_manager = webhook_handler.settings_manager
+            ticker_data = settings_manager.get_ticker_data()
+            
+            logging.info(f"Searching ticker data for symbol: {symbol}")
+            
+            # First try exact symbol match
+            match = ticker_data[ticker_data['Symbol'] == symbol]
+            if not match.empty:
+                epic = match.iloc[0]['IG EPIC']
+                if not epic or pd.isna(epic) or epic == '':
+                    logging.error(f"Missing EPIC code for symbol {symbol} in ticker data")
+                    return {
+                        "status": "error",
+                        "message": f"Missing EPIC code for symbol: {symbol}"
+                    }
+                logging.info(f"Found EPIC via exact match: {epic}")
+            else:
+                logging.info(f"No exact match found for symbol: {symbol}")
+                # Try matching with base symbol if it contains a colon
+                if ':' in symbol:
+                    base_symbol = symbol.split(':')[1]
+                    logging.info(f"Trying to match with base symbol: {base_symbol}")
+                    match = ticker_data[ticker_data['Symbol'].str.contains(base_symbol, case=True, na=False)]
+                    if not match.empty:
+                        epic = match.iloc[0]['IG EPIC']
+                        if not epic or pd.isna(epic) or epic == '':
+                            logging.error(f"Missing EPIC code for base symbol {base_symbol} in ticker data")
+                            return {
+                                "status": "error",
+                                "message": f"Missing EPIC code for symbol: {symbol}"
+                            }
+                        logging.info(f"Found EPIC via base symbol match: {epic}")
+                    else:
+                        logging.error(f"No match found for base symbol: {base_symbol}")
+                        return {
+                            "status": "error",
+                            "message": f"Could not find symbol in ticker data: {symbol}"
+                        }
+                else:
+                    logging.error(f"Symbol not found in ticker data: {symbol}")
+                    return {
+                        "status": "error",
+                        "message": f"Could not find symbol in ticker data: {symbol}"
+                    }
+        except Exception as e:
+            logging.error(f"Error looking up symbol in ticker data: {e}")
+            return {
+                "status": "error",
+                "message": f"Error looking up symbol in ticker data: {str(e)}"
+            }
+            
+        if not epic:
+            logging.error(f"Could not find EPIC for symbol: {symbol}")
+            return {
+                "status": "error",
+                "message": f"Could not find EPIC for symbol: {symbol}"
+            }
+        
+        # Calculate stop and limit values from ATR values if available
+        stop = None
+        limit = None
+        
+        # Check if ATR values are provided (format: SYMBOL DIRECTION PRICE ATR1 ATR2 ... ATR10)
+        if len(parts) >= 13:  # We need at least 10 ATR values
+            try:
+                # Extract ATR values
+                atr_values = [float(parts[i]) for i in range(3, 13)]
+                
+                # Get ATR indices for stop loss and take profit from ticker data
+                ticker_row = ticker_data[ticker_data['Symbol'] == symbol]
+                if not ticker_row.empty:
+                    atr_sl_period = int(ticker_row['ATR Stop Loss Period'].values[0])
+                    atr_tp_period = int(ticker_row['ATR Profit Target Period'].values[0])
+                    atr_sl_multiple = float(ticker_row['ATR Stop Loss Multiple'].values[0]) / 100.0
+                    atr_tp_multiple = float(ticker_row['ATR Profit Multiple'].values[0]) / 100.0
+                    
+                    # Get the relevant ATR values
+                    atr_sl = atr_values[atr_sl_period - 1]  # 0-indexed list
+                    atr_tp = atr_values[atr_tp_period - 1]  # 0-indexed list
+                    
+                    # Get opening price multiplier from ticker data
+                    opening_price_multiple = float(ticker_row['Opening Price Multiple'].values[0]) / 100.0
+                    
+                    # Calculate adjusted entry price
+                    if direction == "BUY":
+                        # For BUY, we divide by the multiplier (if multiplier < 1, price increases)
+                        entry_price = price * opening_price_multiple
+                    else:  # SELL
+                        # For SELL, we multiply by the multiplier (if multiplier > 1, price increases)
+                        entry_price = price * opening_price_multiple
+                    
+                    logging.info(f"Calculated entry price: {entry_price} (original: {price}, multiplier: {opening_price_multiple})")
+                    
+                    # Calculate stop and limit levels (not distances)
+                    if direction_text == "UP":  # UP signal = SELL direction
+                        # For UP (SELL):
+                        # Stop level = price + (ATR_SL * Multiple)
+                        # Limit level = price - (ATR_TP * Multiple)
+                        stop_level = price + (atr_sl * atr_sl_multiple)
+                        limit_level = price - (atr_tp * atr_tp_multiple)
+                        logging.info(f"UP (SELL) - Stop level: {stop_level} = {price} + ({atr_sl} * {atr_sl_multiple})")
+                        logging.info(f"UP (SELL) - Limit level: {limit_level} = {price} - ({atr_tp} * {atr_tp_multiple})")
+                    else:  # DOWN signal = BUY direction
+                        # For DOWN (BUY):
+                        # Stop level = price - (ATR_SL * Multiple)
+                        # Limit level = price + (ATR_TP * Multiple)
+                        stop_level = price - (atr_sl * atr_sl_multiple)
+                        limit_level = price + (atr_tp * atr_tp_multiple)
+                        logging.info(f"DOWN (BUY) - Stop level: {stop_level} = {price} - ({atr_sl} * {atr_sl_multiple})")
+                        logging.info(f"DOWN (BUY) - Limit level: {limit_level} = {price} + ({atr_tp} * {atr_tp_multiple})")
+                    
+                    logging.info(f"Calculated stop level: {stop_level}, limit level: {limit_level} from ATR values")
+                    
+                    # Set the calculated values
+                    price = entry_price
+                    stop = stop_level
+                    limit = limit_level
+            except Exception as e:
+                logging.error(f"Error calculating stop/limit from ATR values: {e}")
+        
+        # İşlenmiş veriyi webhook handler'a gönder
+        processed_data = {
+            "symbol": symbol,
+            "epic": epic,
+            "direction": direction,
+            "price": price,
+            "test_mode": request.args.get('test', 'false').lower() == 'true'
+        }
+        
+        # Add stop and limit if calculated
+        if stop is not None:
+            processed_data["stop"] = stop
+        if limit is not None:
+            processed_data["limit"] = limit
+        
+        # Settings'ten default order type'ı al
+        settings = settings_manager.get_settings()
+        trading_settings = settings.get('trading', {})
+        default_order_type = trading_settings.get('default_order_type', 'LIMIT')
+        
+        logging.info(f"Using default order type from settings: {default_order_type}")
+        
+        logging.info(f"Processed webhook data: {processed_data}")
+        result = webhook_handler.process_webhook(processed_data)
+        return result
+        
+    except Exception as e:
+        logging.error(f"Error processing TradingView alert: {str(e)}")
+        return {
+            "status": "error",
+            "message": f"Error processing alert: {str(e)}"
+        }
 
 @app.route('/markets/<epic>', methods=['GET'])
 def get_market_details(epic):

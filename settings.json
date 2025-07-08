@@ -11,7 +11,7 @@
         "csv_file_path": "ticker_data.csv",
         "max_deal_age_minutes": 60,
         "max_total_positions_and_orders": 10,
-        "default_order_type": "LIMIT"
+        "default_order_type": "WORKING_ORDER"
     },
     "validation": {
         "check_existing_position": true,

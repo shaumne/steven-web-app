@@ -486,7 +486,8 @@ class TradeManager:
                 limit_level=limit_level,  # Giriş fiyatı
                 limit_distance=final_limit_distance,  # Take profit mesafesi
                 stop_distance=final_stop_distance,  # Stop loss mesafesi
-                use_limit_order=True
+                use_limit_order=True,
+                expiry="DFB"  # Daily Funded Bet - hisse senetleri için bu varsayılan değerdir
             )
             
             # API yanıtını detaylı şekilde logla
